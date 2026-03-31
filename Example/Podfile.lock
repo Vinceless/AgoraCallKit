@@ -1,0 +1,61 @@
+PODS:
+  - AgoraCallKit (0.0.1):
+    - AgoraRtcEngine_iOS
+  - AgoraInfra_iOS (1.3.5)
+  - AgoraRtcEngine_iOS (4.6.2):
+    - AgoraRtcEngine_iOS/AIAEC (= 4.6.2)
+    - AgoraRtcEngine_iOS/AIAECLL (= 4.6.2)
+    - AgoraRtcEngine_iOS/AINS (= 4.6.2)
+    - AgoraRtcEngine_iOS/AINSLL (= 4.6.2)
+    - AgoraRtcEngine_iOS/AudioBeauty (= 4.6.2)
+    - AgoraRtcEngine_iOS/ClearVision (= 4.6.2)
+    - AgoraRtcEngine_iOS/ContentInspect (= 4.6.2)
+    - AgoraRtcEngine_iOS/FaceCapture (= 4.6.2)
+    - AgoraRtcEngine_iOS/FaceDetection (= 4.6.2)
+    - AgoraRtcEngine_iOS/LipSync (= 4.6.2)
+    - AgoraRtcEngine_iOS/ReplayKit (= 4.6.2)
+    - AgoraRtcEngine_iOS/RtcBasic (= 4.6.2)
+    - AgoraRtcEngine_iOS/SpatialAudio (= 4.6.2)
+    - AgoraRtcEngine_iOS/VideoAv1CodecEnc (= 4.6.2)
+    - AgoraRtcEngine_iOS/VideoCodecEnc (= 4.6.2)
+    - AgoraRtcEngine_iOS/VirtualBackground (= 4.6.2)
+    - AgoraRtcEngine_iOS/VQA (= 4.6.2)
+  - AgoraRtcEngine_iOS/AIAEC (4.6.2)
+  - AgoraRtcEngine_iOS/AIAECLL (4.6.2)
+  - AgoraRtcEngine_iOS/AINS (4.6.2)
+  - AgoraRtcEngine_iOS/AINSLL (4.6.2)
+  - AgoraRtcEngine_iOS/AudioBeauty (4.6.2)
+  - AgoraRtcEngine_iOS/ClearVision (4.6.2)
+  - AgoraRtcEngine_iOS/ContentInspect (4.6.2)
+  - AgoraRtcEngine_iOS/FaceCapture (4.6.2)
+  - AgoraRtcEngine_iOS/FaceDetection (4.6.2)
+  - AgoraRtcEngine_iOS/LipSync (4.6.2)
+  - AgoraRtcEngine_iOS/ReplayKit (4.6.2)
+  - AgoraRtcEngine_iOS/RtcBasic (4.6.2):
+    - AgoraInfra_iOS (= 1.3.5)
+  - AgoraRtcEngine_iOS/SpatialAudio (4.6.2)
+  - AgoraRtcEngine_iOS/VideoAv1CodecEnc (4.6.2)
+  - AgoraRtcEngine_iOS/VideoCodecEnc (4.6.2)
+  - AgoraRtcEngine_iOS/VirtualBackground (4.6.2)
+  - AgoraRtcEngine_iOS/VQA (4.6.2)
+
+DEPENDENCIES:
+  - AgoraCallKit (from `../`)
+
+SPEC REPOS:
+  trunk:
+    - AgoraInfra_iOS
+    - AgoraRtcEngine_iOS
+
+EXTERNAL SOURCES:
+  AgoraCallKit:
+    :path: "../"
+
+SPEC CHECKSUMS:
+  AgoraCallKit: 58f02108c748508da308366b6823800d855e2896
+  AgoraInfra_iOS: 0bf927aad4fc425b24ca5d094b333361960f5cb0
+  AgoraRtcEngine_iOS: 11f37dd846d6194a5268b084b99102e5b6aff0de
+
+PODFILE CHECKSUM: 03e7acd32afabae9381161bee69550759587daef
+
+COCOAPODS: 1.16.2
