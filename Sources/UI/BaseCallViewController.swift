@@ -113,7 +113,7 @@ open class BaseCallViewController: UIViewController {
     }
     
     open func setupBaseUI() {
-        // 子类可以重写以调整布局，默认将所有按钮放在底部
+        // 默认将所有控制按钮放在底部水平排列
         let stack = UIStackView(arrangedSubviews: [muteAudioButton, muteVideoButton, speakerButton, switchCameraButton, endCallButton])
         stack.axis = .horizontal
         stack.spacing = 20
@@ -226,8 +226,9 @@ open class BaseCallViewController: UIViewController {
             showControlButtons(false)
             acceptCallButton.isHidden = false
             rejectCallButton.isHidden = false
-            // 将接听/拒绝按钮放在底部
-            // 子类可以调整位置
+            // 将接听/拒绝按钮放在底部（子类可调整位置）
+            // 这里简单地将它们添加到 stack 中，实际可能需要重新布局
+            // 我们暂时不自动添加，由子类在 setupBaseUI 中处理
         case .connecting:
             statusLabel.text = "连接中..."
             durationLabel.text = ""
@@ -275,11 +276,15 @@ extension BaseCallViewController: CallUIDelegate {
     }
     
     public func remoteUserDidJoin(uid: UInt, userId: String) {
-        // 子类可重写，例如设置远端视频
+        DispatchQueue.main.async {
+            // 子类可重写，例如设置远端视频
+        }
     }
     
     public func remoteUserDidLeave(uid: UInt, userId: String) {
-        // 子类可重写
+        DispatchQueue.main.async {
+            // 子类可重写
+        }
     }
     
     public func didUpdateDuration(_ duration: TimeInterval) {
@@ -289,10 +294,9 @@ extension BaseCallViewController: CallUIDelegate {
     }
     
     public func didReceiveIncomingCall(fromUserId: String, userName: String?, callType: CallType, channelName: String, token: String) {
-        // 这个回调通常由 CallManager 触发，UI 会弹出此界面
-        // 基类已经处理了状态，子类可以展示自定义来电界面
         DispatchQueue.main.async {
-//            self.callType = callType
+            // 这个回调通常由 CallManager 触发，UI 会弹出此界面
+            // 基类已经处理了状态，子类可以展示自定义来电界面
             self.updateUIForState(.incoming)
         }
     }
