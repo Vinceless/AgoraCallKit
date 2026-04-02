@@ -1,15 +1,14 @@
 //
 //  GroupAudioCallViewController.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/4/25.
 //
 
 import UIKit
-import CallCore
 
 /// 群聊音频通话界面（显示用户列表，包含静音状态）
-class GroupAudioCallViewController: BaseCallViewController {
+open class GroupAudioCallViewController: BaseCallViewController {
     
     // MARK: - UI 组件
     private let tableView: UITableView = {
@@ -31,7 +30,7 @@ class GroupAudioCallViewController: BaseCallViewController {
     
     private var userList: [(uid: UInt, userId: String, isAudioMuted: Bool)] = []
     
-    override func viewDidLoad() {
+    open override func viewDidLoad() {
         super.viewDidLoad()
         setupAudioUI()
         
@@ -73,20 +72,20 @@ class GroupAudioCallViewController: BaseCallViewController {
             userList.append((0, localId, false)) // uid 0 表示本地
         }
         // 添加远端用户（实际项目中可以从 CallManager 获取远端用户列表，这里简化）
-        // 由于 CallCore 当前未维护群组用户列表，你需要扩展 CallManager 来存储群组成员
+        // 由于 AgoraCallCore 当前未维护群组用户列表，你需要扩展 CallManager 来存储群组成员
         // 这里仅做示例，实际应监听 remoteUserDidJoin/Leave 来更新列表
         tableView.reloadData()
         userCountLabel.text = "在线人数: \(userList.count)"
     }
     
-    override func remoteUserDidJoin(uid: UInt, userId: String) {
+    open override func remoteUserDidJoin(uid: UInt, userId: String) {
         super.remoteUserDidJoin(uid: uid, userId: userId)
         userList.append((uid, userId, false))
         tableView.reloadData()
         userCountLabel.text = "在线人数: \(userList.count)"
     }
     
-    override func remoteUserDidLeave(uid: UInt, userId: String) {
+    public override func remoteUserDidLeave(uid: UInt, userId: String) {
         super.remoteUserDidLeave(uid: uid, userId: userId)
         userList.removeAll { $0.uid == uid }
         tableView.reloadData()
@@ -97,40 +96,40 @@ class GroupAudioCallViewController: BaseCallViewController {
     // 这里简单示例，实际可监听 CallUIDelegate 中新增的方法
     
     // MARK: - 悬浮窗支持（可选）
-    override var floatingWindowTitle: String {
+    public override var floatingWindowTitle: String {
         return "群组音频"
     }
     
-    override var floatingWindowSubtitle: String? {
+    public override var floatingWindowSubtitle: String? {
         return "\(userList.count)人在线"
     }
     
-    override var isVideoCall: Bool {
+    public override var isVideoCall: Bool {
         return false
     }
     
-    override func getFloatingWindowVideoView() -> UIView? {
+    public override func getFloatingWindowVideoView() -> UIView? {
         return nil
     }
     
-    override func restoreFromFloatingWindow(_ videoView: UIView?) { }
+    public override func restoreFromFloatingWindow(_ videoView: UIView?) { }
     
-    override func endCallFromFloatingWindow() {
+    public override func endCallFromFloatingWindow() {
         callManager.hangUp()
     }
     
-    override func getCurrentCallDuration() -> TimeInterval {
+    public override func getCurrentCallDuration() -> TimeInterval {
         return callManager.getCurrentDuration()
     }
 }
 
 // MARK: - UITableView DataSource & Delegate
 extension GroupAudioCallViewController: UITableViewDataSource, UITableViewDelegate {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return userList.count
     }
     
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "GroupAudioCell", for: indexPath) as! GroupAudioCell
         let user = userList[indexPath.row]
         let isLocal = user.uid == 0

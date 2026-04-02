@@ -1,6 +1,6 @@
 //
 //  AgoraEngineManager.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/3/29.
 //
@@ -9,7 +9,7 @@ import Foundation
 import AgoraRtcKit
 import AVFoundation
 
-/// 声网引擎代理（供 CallCore 内部使用）
+/// 声网引擎代理（供 AgoraCallCore 内部使用）
 public protocol AgoraEngineDelegate: AnyObject {
     /// 已加入频道
     func engine(_ engine: AgoraEngineManager, didJoinChannel channel: String, uid: UInt)
@@ -38,6 +38,9 @@ public class AgoraEngineManager: NSObject {
     private var currentChannel: String?
     private var isVideoEnabled: Bool = false
     
+    // 画中画代理
+    private var videoFrameDelegate: PIPVideoFrameDelegate?
+    
     private override init() {
         super.init()
     }
@@ -55,6 +58,15 @@ public class AgoraEngineManager: NSObject {
         engine?.enableVideo()
         engine?.disableVideo() // 初始关闭视频，在需要视频时再开启
         setupAudioSession()
+        // 设置视频帧代理（用于画中画）
+            videoFrameDelegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
+            engine?.setVideoFrameDelegate(videoFrameDelegate)
+    }
+    
+    // 在清理时移除代理
+    public func destroy() {
+        engine?.setVideoFrameDelegate(nil)
+        // ...
     }
     
     private func setupAudioSession() {

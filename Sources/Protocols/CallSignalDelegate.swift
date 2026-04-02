@@ -1,6 +1,6 @@
 //
 //  CallSignalDelegate.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/3/29.
 //
@@ -34,7 +34,7 @@ public protocol CallSignalDelegate: AnyObject {
     func setListener(_ listener: CallSignalListener?)
 }
 
-/// 信令接收监听器（由 CallCore 实现，App 层收到信令后调用）
+/// 信令接收监听器（由 AgoraCallCore 实现，App 层收到信令后调用）
 public protocol CallSignalListener: AnyObject {
     /// 收到来电
     func onReceiveCall(fromUserId: String, channelName: String, token: String, callType: CallType)

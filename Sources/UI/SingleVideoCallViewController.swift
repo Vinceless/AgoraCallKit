@@ -1,15 +1,14 @@
 //
 //  SingleVideoCallViewController.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/4/25.
 //
 
 import UIKit
-import CallCore
 
 /// 单聊视频通话界面
-class SingleVideoCallViewController: BaseCallViewController {
+open class SingleVideoCallViewController: BaseCallViewController {
     
     // MARK: - UI 组件
     private let remoteVideoView: UIView = {
@@ -50,13 +49,13 @@ class SingleVideoCallViewController: BaseCallViewController {
     private var remoteUid: UInt?
     
     // MARK: - 生命周期
-    override func viewDidLoad() {
+    open override func viewDidLoad() {
         super.viewDidLoad()
         setupVideoUI()
         setupRemoteUserInfo()
     }
     
-    override func viewDidLayoutSubviews() {
+    open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // 调整本地视频小窗位置（可自定义）
         localVideoView.frame = CGRect(
@@ -126,7 +125,7 @@ class SingleVideoCallViewController: BaseCallViewController {
     }
     
     // MARK: - 重写父类方法（UI 更新）
-    override func updateUIForState(_ state: CallState) {
+    open override func updateUIForState(_ state: CallState) {
         super.updateUIForState(state)
         switch state {
         case .connected:
@@ -139,13 +138,13 @@ class SingleVideoCallViewController: BaseCallViewController {
         }
     }
     
-    override func updateDuration(_ duration: TimeInterval) {
+    open override func updateDuration(_ duration: TimeInterval) {
         super.updateDuration(duration)
         // 可自定义显示格式
     }
     
     // MARK: - CallUIDelegate 实现（部分重写）
-    override func remoteUserDidJoin(uid: UInt, userId: String) {
+    public override func remoteUserDidJoin(uid: UInt, userId: String) {
         super.remoteUserDidJoin(uid: uid, userId: userId)
         remoteUid = uid
         // 设置远端视频渲染
@@ -154,36 +153,36 @@ class SingleVideoCallViewController: BaseCallViewController {
         remoteNameLabel.text = userId
     }
     
-    override func remoteUserDidLeave(uid: UInt, userId: String) {
+    public override func remoteUserDidLeave(uid: UInt, userId: String) {
         super.remoteUserDidLeave(uid: uid, userId: userId)
         // 远端离开，显示头像占位
         remoteAvatarImageView.isHidden = false
         remoteNameLabel.text = "对方已离开"
     }
     
-    override func didDisconnect(error: Error?) {
+    public override func didDisconnect(error: Error?) {
         super.didDisconnect(error: error)
         // 可选：显示提示后自动关闭
     }
     
     // MARK: - 悬浮窗支持
-    override var floatingWindowTitle: String {
+    public override var floatingWindowTitle: String {
         return remoteUserId ?? "视频通话"
     }
     
-    override var floatingWindowSubtitle: String? {
+    public override var floatingWindowSubtitle: String? {
         return "通话中"
     }
     
-    override var isVideoCall: Bool {
+    public override var isVideoCall: Bool {
         return true
     }
     
-    override func getFloatingWindowVideoView() -> UIView? {
+    public override func getFloatingWindowVideoView() -> UIView? {
         return localVideoView
     }
     
-    override func restoreFromFloatingWindow(_ videoView: UIView?) {
+    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
         if let videoView = videoView {
             videoView.frame = localVideoView.bounds
             videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -191,11 +190,11 @@ class SingleVideoCallViewController: BaseCallViewController {
         }
     }
     
-    override func endCallFromFloatingWindow() {
+    public override func endCallFromFloatingWindow() {
         callManager.hangUp()
     }
     
-    override func getCurrentCallDuration() -> TimeInterval {
+    public override func getCurrentCallDuration() -> TimeInterval {
         return callManager.getCurrentDuration()
     }
 }

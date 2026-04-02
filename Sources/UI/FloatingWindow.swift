@@ -1,6 +1,6 @@
 //
 //  FloatingWindow.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/3/29.
 //

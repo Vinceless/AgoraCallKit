@@ -1,15 +1,14 @@
 //
 //  GroupVideoCallViewController.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/4/25.
 //
 
 import UIKit
-import CallCore
 
 /// 群聊视频通话界面（支持网格布局，动态增删视频窗口）
-class GroupVideoCallViewController: BaseCallViewController {
+open class GroupVideoCallViewController: BaseCallViewController {
     
     // MARK: - UI 组件
     private let containerView: UIView = {
@@ -33,12 +32,12 @@ class GroupVideoCallViewController: BaseCallViewController {
     private var videoViews: [UInt: UIView] = [:]
     private var videoConstraints: [NSLayoutConstraint] = []
     
-    override func viewDidLoad() {
+    open override func viewDidLoad() {
         super.viewDidLoad()
         setupGroupVideoUI()
     }
     
-    override func viewDidLayoutSubviews() {
+    open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateVideoLayout()
     }
@@ -106,7 +105,7 @@ class GroupVideoCallViewController: BaseCallViewController {
     }
     
     // MARK: - 用户加入/离开处理
-    override func remoteUserDidJoin(uid: UInt, userId: String) {
+    open override func remoteUserDidJoin(uid: UInt, userId: String) {
         super.remoteUserDidJoin(uid: uid, userId: userId)
         let videoView = createVideoView(for: uid, isLocal: false)
         videoViews[uid] = videoView
@@ -115,7 +114,7 @@ class GroupVideoCallViewController: BaseCallViewController {
         updateVideoLayout()
     }
     
-    override func remoteUserDidLeave(uid: UInt, userId: String) {
+    open override func remoteUserDidLeave(uid: UInt, userId: String) {
         super.remoteUserDidLeave(uid: uid, userId: userId)
         if let view = videoViews[uid] {
             view.removeFromSuperview()
@@ -227,24 +226,24 @@ class GroupVideoCallViewController: BaseCallViewController {
     }
     
     // MARK: - 悬浮窗支持（可选）
-    override var floatingWindowTitle: String {
+    public override var floatingWindowTitle: String {
         return "群组视频"
     }
     
-    override var floatingWindowSubtitle: String? {
+    public override var floatingWindowSubtitle: String? {
         return "\(videoViews.count)人在通话"
     }
     
-    override var isVideoCall: Bool {
+    public override var isVideoCall: Bool {
         return true
     }
     
-    override func getFloatingWindowVideoView() -> UIView? {
+    public override func getFloatingWindowVideoView() -> UIView? {
         // 返回本地视频视图
         return videoViews[0]
     }
     
-    override func restoreFromFloatingWindow(_ videoView: UIView?) {
+    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
         if let videoView = videoView, let localView = videoViews[0] {
             videoView.frame = localView.bounds
             videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -252,11 +251,11 @@ class GroupVideoCallViewController: BaseCallViewController {
         }
     }
     
-    override func endCallFromFloatingWindow() {
+    public override func endCallFromFloatingWindow() {
         callManager.hangUp()
     }
     
-    override func getCurrentCallDuration() -> TimeInterval {
+    public override func getCurrentCallDuration() -> TimeInterval {
         return callManager.getCurrentDuration()
     }
 }

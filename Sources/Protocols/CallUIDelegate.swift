@@ -1,13 +1,13 @@
 //
 //  CallUIDelegate.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/3/29.
 //
 
 import Foundation
 
-/// UI 回调协议（由 CallCore 调用，App 层的 UI 实现该协议以接收状态更新）
+/// UI 回调协议（由 AgoraCallCore 调用，App 层的 UI 实现该协议以接收状态更新）
 public protocol CallUIDelegate: AnyObject {
     /// 通话状态变化
     func callStateDidChange(_ state: CallState)

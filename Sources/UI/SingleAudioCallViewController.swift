@@ -1,15 +1,14 @@
 //
 //  SingleAudioCallViewController.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by Vince on 2021/4/25.
 //
 
 import UIKit
-import CallCore
 
 /// 单聊音频通话界面
-class SingleAudioCallViewController: BaseCallViewController {
+open class SingleAudioCallViewController: BaseCallViewController {
     
     // MARK: - UI 组件
     private let avatarImageView: UIImageView = {
@@ -31,7 +30,7 @@ class SingleAudioCallViewController: BaseCallViewController {
         return label
     }()
     
-    override func viewDidLoad() {
+    open override func viewDidLoad() {
         super.viewDidLoad()
         setupAudioUI()
         setupRemoteUserInfo()
@@ -70,7 +69,7 @@ class SingleAudioCallViewController: BaseCallViewController {
         }
     }
     
-    override func updateUIForState(_ state: CallState) {
+    open override func updateUIForState(_ state: CallState) {
         super.updateUIForState(state)
         switch state {
         case .calling:
@@ -86,44 +85,44 @@ class SingleAudioCallViewController: BaseCallViewController {
         }
     }
     
-    override func remoteUserDidJoin(uid: UInt, userId: String) {
+    open override func remoteUserDidJoin(uid: UInt, userId: String) {
         super.remoteUserDidJoin(uid: uid, userId: userId)
         nameLabel.text = userId
         statusLabel.text = "通话中"
     }
     
-    override func remoteUserDidLeave(uid: UInt, userId: String) {
+    open override func remoteUserDidLeave(uid: UInt, userId: String) {
         super.remoteUserDidLeave(uid: uid, userId: userId)
         nameLabel.text = "对方已离开"
         statusLabel.text = "通话结束"
     }
     
     // MARK: - 悬浮窗支持
-    override var floatingWindowTitle: String {
+    public override var floatingWindowTitle: String {
         return remoteUserId ?? "音频通话"
     }
     
-    override var floatingWindowSubtitle: String? {
+    public override var floatingWindowSubtitle: String? {
         return "通话中"
     }
     
-    override var isVideoCall: Bool {
+    public override var isVideoCall: Bool {
         return false
     }
     
-    override func getFloatingWindowVideoView() -> UIView? {
+    public override func getFloatingWindowVideoView() -> UIView? {
         return nil
     }
     
-    override func restoreFromFloatingWindow(_ videoView: UIView?) {
+    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
         // 无视频视图
     }
     
-    override func endCallFromFloatingWindow() {
+    public override func endCallFromFloatingWindow() {
         callManager.hangUp()
     }
     
-    override func getCurrentCallDuration() -> TimeInterval {
+    public override func getCurrentCallDuration() -> TimeInterval {
         return callManager.getCurrentDuration()
     }
 }
