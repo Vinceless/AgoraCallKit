@@ -18,13 +18,17 @@ open class SingleVideoCallViewController: BaseCallViewController {
         return view
     }()
     
-    private let localVideoView: UIView = {
+    private let miniVideoView: UIView = {
         let view = UIView()
         view.backgroundColor = .black
         view.layer.cornerRadius = 12
         view.clipsToBounds = true
         return view
     }()
+    
+    open override var localVideoView: UIView? {
+        miniVideoView
+    }
     
     private let remoteAvatarImageView: UIImageView = {
         let iv = UIImageView()
@@ -58,7 +62,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // 调整本地视频小窗位置（可自定义）
-        localVideoView.frame = CGRect(
+        miniVideoView.frame = CGRect(
             x: view.bounds.width - 120 - 16,
             y: view.safeAreaInsets.top + 60,
             width: 120,
@@ -79,8 +83,8 @@ open class SingleVideoCallViewController: BaseCallViewController {
         ])
         
         // 本地视频小窗
-        view.addSubview(localVideoView)
-        localVideoView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(miniVideoView)
+        miniVideoView.translatesAutoresizingMaskIntoConstraints = false
         // 约束在 viewDidLayoutSubviews 中手动设置 frame，这里不做约束，以便更灵活
         
         // 远程信息视图
@@ -113,7 +117,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
         ])
         
         // 设置本地视频渲染
-        callManager.setupLocalVideoView(localVideoView)
+        callManager.setupLocalVideoView(miniVideoView)
     }
     
     private func setupRemoteUserInfo() {
@@ -184,9 +188,9 @@ open class SingleVideoCallViewController: BaseCallViewController {
     
     public override func restoreFromFloatingWindow(_ videoView: UIView?) {
         if let videoView = videoView {
-            videoView.frame = localVideoView.bounds
+            videoView.frame = miniVideoView.bounds
             videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            localVideoView.addSubview(videoView)
+            miniVideoView.addSubview(videoView)
         }
     }
     

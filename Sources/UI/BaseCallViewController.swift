@@ -250,6 +250,15 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         if let localVideoView = localVideoView {
             callManager.setupLocalVideoView(localVideoView)
         }
+        
+//        if shouldRestoreFloatingWindowAfterPip && callManager.currentState == .connected {
+//                if let topVC = UIApplication.shared.topViewController(), topVC is BaseCallViewController {
+//                    shouldRestoreFloatingWindowAfterPip = false
+//                } else {
+//                    NotificationCenter.default.post(name: .needRestoreFloatingWindow, object: nil)
+//                    shouldRestoreFloatingWindowAfterPip = false
+//                }
+//            }
     }
 
     // 子类需要提供 localVideoView

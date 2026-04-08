@@ -116,4 +116,5 @@ extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
 extension Notification.Name {
     static let pipWillStart = Notification.Name("pipWillStart")
     static let pipDidStop = Notification.Name("pipDidStop")
+    static let needRestoreFloatingWindow = Notification.Name("needRestoreFloatingWindow")
 }
