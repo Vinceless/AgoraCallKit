@@ -43,7 +43,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
     }
     
     private func setupGroupVideoUI() {
-        // 容器视图（用于放置所有视频窗口）
         view.insertSubview(containerView, at: 0)
         containerView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -53,7 +52,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
             containerView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
-        // 用户数量标签
         view.addSubview(userCountLabel)
         userCountLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -63,25 +61,22 @@ open class GroupVideoCallViewController: BaseCallViewController {
             userCountLabel.heightAnchor.constraint(equalToConstant: 24)
         ])
         
-        // 群聊视频通话默认显示控制按钮
         showControlButtons(true)
         
-        // 设置本地视频视图
-        let localView = createVideoView(for: 0, isLocal: true)
+        let localView = createVideoView(for: 0, name: "我")
         videoViews[0] = localView
         callManager.setupLocalVideoView(localView)
         updateUserCountLabel()
     }
     
-    private func createVideoView(for uid: UInt, isLocal: Bool) -> UIView {
+    private func createVideoView(for uid: UInt, name: String) -> UIView {
         let view = UIView()
         view.backgroundColor = .darkGray
         view.layer.cornerRadius = 8
         view.clipsToBounds = true
         
-        // 添加用户标识
         let label = UILabel()
-        label.text = isLocal ? "我" : "用户 \(uid)"
+        label.text = name
         label.textColor = .white
         label.font = .systemFont(ofSize: 12)
         label.backgroundColor = UIColor.black.withAlphaComponent(0.5)
@@ -100,26 +95,33 @@ open class GroupVideoCallViewController: BaseCallViewController {
     }
     
     private func updateUserCountLabel() {
-        let count = videoViews.count
-        userCountLabel.text = "在线: \(count)"
+        userCountLabel.text = "在线: \(videoViews.count)"
+    }
+    
+    open override func didConnect(withUser user: CallUser) {
+        super.didConnect(withUser: user)
+        if let view = videoViews[0] {
+//            view.subviews.first?.text = user.name
+        }
+        updateUserCountLabel()
     }
     
     // MARK: - 用户加入/离开处理
-    open override func remoteUserDidJoin(uid: UInt, userId: String) {
-        super.remoteUserDidJoin(uid: uid, userId: userId)
-        let videoView = createVideoView(for: uid, isLocal: false)
-        videoViews[uid] = videoView
-        callManager.setupRemoteVideoView(videoView, forUid: uid)
+    open override func remoteUserDidJoin(_ user: CallUser) {
+        super.remoteUserDidJoin(user)
+        let videoView = createVideoView(for: user.uid, name: user.name)
+        videoViews[user.uid] = videoView
+        callManager.setupRemoteVideoView(videoView, forUid: user.uid)
         updateUserCountLabel()
         updateVideoLayout()
     }
     
-    open override func remoteUserDidLeave(uid: UInt, userId: String) {
-        super.remoteUserDidLeave(uid: uid, userId: userId)
-        if let view = videoViews[uid] {
+    open override func remoteUserDidLeave(_ user: CallUser) {
+        super.remoteUserDidLeave(user)
+        if let view = videoViews[user.uid] {
             view.removeFromSuperview()
-            videoViews.removeValue(forKey: uid)
-            callManager.engine.removeRemoteVideoView(forUid: uid)
+            videoViews.removeValue(forKey: user.uid)
+            callManager.engine.removeRemoteVideoView(forUid: user.uid)
         }
         updateUserCountLabel()
         updateVideoLayout()
@@ -127,7 +129,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
     
     // MARK: - 布局逻辑
     private func updateVideoLayout() {
-        // 移除所有约束
         NSLayoutConstraint.deactivate(videoConstraints)
         videoConstraints.removeAll()
         
@@ -142,7 +143,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
         case 4: layoutFour(views)
         default: layoutGrid(views)
         }
-        
         NSLayoutConstraint.activate(videoConstraints)
     }
     
@@ -157,7 +157,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
     }
     
     private func layoutTwo(_ views: [UIView]) {
-        guard views.count == 2 else { return }
         videoConstraints.append(contentsOf: [
             views[0].leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             views[0].trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
@@ -171,7 +170,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
     }
     
     private func layoutThree(_ views: [UIView]) {
-        guard views.count == 3 else { return }
         videoConstraints.append(contentsOf: [
             views[0].leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             views[0].trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
@@ -189,7 +187,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
     }
     
     private func layoutFour(_ views: [UIView]) {
-        guard views.count == 4 else { return }
         videoConstraints.append(contentsOf: [
             views[0].leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             views[0].trailingAnchor.constraint(equalTo: containerView.centerXAnchor),

@@ -12,12 +12,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     // MARK: - 公共属性
     public let callManager = CallManager.shared
-    public var callType: CallType? {
-        return callManager.getCurrentCallType
-    }
-    public var remoteUserId: String? {
-        return callManager.getCurrentRemoteUserId
-    }
+    public var callType: CallType? { callManager.getCurrentCallType }
+    public var remoteUser: CallUser? { callManager.getCurrentRemoteUser }
     
     // 基础 UI 组件（子类可访问和修改）
     public let statusLabel: UILabel = {
@@ -392,21 +388,21 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         }
     }
     
-    public func didConnect(withUid uid: UInt) {
+    open func didConnect(withUser user: CallUser) {
         // 子类可重写
     }
     
-    public func didDisconnect(error: Error?) {
+    open func didDisconnect(error: Error?) {
         // 子类可重写
     }
     
-    public func remoteUserDidJoin(uid: UInt, userId: String) {
+    open func remoteUserDidJoin(_ user: CallUser) {
         DispatchQueue.main.async {
             // 子类可重写，例如设置远端视频
         }
     }
     
-    public func remoteUserDidLeave(uid: UInt, userId: String) {
+    open func remoteUserDidLeave(_ user: CallUser) {
         DispatchQueue.main.async {
             // 子类可重写
         }
@@ -418,7 +414,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         }
     }
     
-    public func didReceiveIncomingCall(fromUserId: String, userName: String?, callType: CallType, channelName: String, token: String) {
+    public func didReceiveIncomingCall(from user: CallUser, callType: CallType, channelName: String, token: String) {
         // 基类已经处理了状态，子类可以进一步定制
         DispatchQueue.main.async {
             self.updateUIForState(.incoming)
@@ -438,7 +434,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     // MARK: - FloatingWindowCompatible (悬浮窗支持)
     
     public var floatingWindowTitle: String {
-        return remoteUserId ?? "通话中"
+        return remoteUser?.name ?? "通话中"
     }
     
     public var floatingWindowSubtitle: String? {

@@ -58,6 +58,14 @@ public class AgoraEngineManager: NSObject {
         engine?.enableVideo()
         engine?.disableVideo() // 初始关闭视频，在需要视频时再开启
         setupAudioSession()
+        
+        // 设置视频编码配置
+            let videoConfig = AgoraVideoEncoderConfiguration(size: CGSize(width: 640, height: 480),
+                                                              frameRate: 15,
+                                                              bitrate: 400,
+                                                              orientationMode: .fixedPortrait,
+                                                              mirrorMode: .auto)
+            engine?.setVideoEncoderConfiguration(videoConfig)
         // 设置视频帧代理（用于画中画）
             videoFrameDelegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
             engine?.setVideoFrameDelegate(videoFrameDelegate)

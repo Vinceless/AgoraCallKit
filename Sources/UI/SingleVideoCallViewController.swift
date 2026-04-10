@@ -121,11 +121,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     }
     
     private func setupRemoteUserInfo() {
-        if let remoteUserId = remoteUserId {
-            remoteNameLabel.text = remoteUserId
-        } else {
-            remoteNameLabel.text = "等待对方加入..."
-        }
+        remoteNameLabel.text = remoteUser?.name ?? "等待对方加入..."
     }
     
     // MARK: - 重写父类方法（UI 更新）
@@ -148,18 +144,16 @@ open class SingleVideoCallViewController: BaseCallViewController {
     }
     
     // MARK: - CallUIDelegate 实现（部分重写）
-    public override func remoteUserDidJoin(uid: UInt, userId: String) {
-        super.remoteUserDidJoin(uid: uid, userId: userId)
-        remoteUid = uid
-        // 设置远端视频渲染
-        callManager.setupRemoteVideoView(remoteVideoView, forUid: uid)
+    open override func remoteUserDidJoin(_ user: CallUser) {
+        super.remoteUserDidJoin(user)
+        remoteUid = user.uid
+        callManager.setupRemoteVideoView(remoteVideoView, forUid: user.uid)
         remoteAvatarImageView.isHidden = true
-        remoteNameLabel.text = userId
+        remoteNameLabel.text = user.name
     }
     
-    public override func remoteUserDidLeave(uid: UInt, userId: String) {
-        super.remoteUserDidLeave(uid: uid, userId: userId)
-        // 远端离开，显示头像占位
+    open override func remoteUserDidLeave(_ user: CallUser) {
+        super.remoteUserDidLeave(user)
         remoteAvatarImageView.isHidden = false
         remoteNameLabel.text = "对方已离开"
     }
@@ -171,7 +165,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     
     // MARK: - 悬浮窗支持
     public override var floatingWindowTitle: String {
-        return remoteUserId ?? "视频通话"
+        remoteUser?.name ?? "视频通话"
     }
     
     public override var floatingWindowSubtitle: String? {

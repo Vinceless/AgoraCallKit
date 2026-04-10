@@ -13,7 +13,7 @@ public protocol CallSignalDelegate: AnyObject {
     /// - Parameters:
     ///   - toUserId: 被叫用户ID
     ///   - channelName: 频道名
-    ///   - token: 声网 Token
+    ///   - token: 声网 Token 参数保留但实际可能不用，由被叫自己获取
     ///   - callType: 通话类型
     ///   - completion: 完成回调
     func sendCallRequest(toUserId: String, channelName: String, token: String, callType: CallType, completion: @escaping (Result<Void, Error>) -> Void)

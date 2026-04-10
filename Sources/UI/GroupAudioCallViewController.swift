@@ -28,7 +28,7 @@ open class GroupAudioCallViewController: BaseCallViewController {
         return label
     }()
     
-    private var userList: [(uid: UInt, userId: String, isAudioMuted: Bool)] = []
+    private var userList: [CallUser] = []
     
     open override func viewDidLoad() {
         super.viewDidLoad()
@@ -37,10 +37,10 @@ open class GroupAudioCallViewController: BaseCallViewController {
         // 隐藏视频相关按钮
         muteVideoButton.isHidden = true
         switchCameraButton.isHidden = true
+        updateUserList()
     }
     
     private func setupAudioUI() {
-        // 用户数量标签
         view.addSubview(userCountLabel)
         userCountLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -48,7 +48,6 @@ open class GroupAudioCallViewController: BaseCallViewController {
             userCountLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20)
         ])
         
-        // 表格视图
         view.addSubview(tableView)
         tableView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -57,39 +56,34 @@ open class GroupAudioCallViewController: BaseCallViewController {
             tableView.topAnchor.constraint(equalTo: userCountLabel.bottomAnchor, constant: 20),
             tableView.bottomAnchor.constraint(equalTo: controlStackView.topAnchor, constant: -20)
         ])
-        
         tableView.dataSource = self
         tableView.delegate = self
-        
-        // 添加本地用户
-        updateUserList()
     }
     
     private func updateUserList() {
-        userList.removeAll()
-        // 添加本地用户
-        if let localId = callManager.userProvider?.currentUserId {
-            userList.append((0, localId, false)) // uid 0 表示本地
+        var list = [CallUser]()
+        if let local = callManager.localUser {
+            list.append(local)
         }
-        // 添加远端用户（实际项目中可以从 CallManager 获取远端用户列表，这里简化）
-        // 由于 AgoraCallCore 当前未维护群组用户列表，你需要扩展 CallManager 来存储群组成员
-        // 这里仅做示例，实际应监听 remoteUserDidJoin/Leave 来更新列表
+        list.append(contentsOf: callManager.getAllRemoteUsers())
+        userList = list
         tableView.reloadData()
         userCountLabel.text = "在线人数: \(userList.count)"
     }
     
-    open override func remoteUserDidJoin(uid: UInt, userId: String) {
-        super.remoteUserDidJoin(uid: uid, userId: userId)
-        userList.append((uid, userId, false))
-        tableView.reloadData()
-        userCountLabel.text = "在线人数: \(userList.count)"
+    open override func didConnect(withUser user: CallUser) {
+        super.didConnect(withUser: user)
+        updateUserList()
     }
     
-    public override func remoteUserDidLeave(uid: UInt, userId: String) {
-        super.remoteUserDidLeave(uid: uid, userId: userId)
-        userList.removeAll { $0.uid == uid }
-        tableView.reloadData()
-        userCountLabel.text = "在线人数: \(userList.count)"
+    open override func remoteUserDidJoin(_ user: CallUser) {
+        super.remoteUserDidJoin(user)
+        updateUserList()
+    }
+    
+    open override func remoteUserDidLeave(_ user: CallUser) {
+        super.remoteUserDidLeave(user)
+        updateUserList()
     }
     
     // 可选：监听远端静音状态变化（需 CallManager 扩展）
@@ -132,8 +126,8 @@ extension GroupAudioCallViewController: UITableViewDataSource, UITableViewDelega
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "GroupAudioCell", for: indexPath) as! GroupAudioCell
         let user = userList[indexPath.row]
-        let isLocal = user.uid == 0
-        cell.configure(name: user.userId + (isLocal ? " (我)" : ""), isMuted: user.isAudioMuted)
+        let displayName = user.name + (user.isLocal ? " (我)" : "")
+        cell.configure(name: displayName, isMuted: user.isAudioMuted)
         return cell
     }
 }
