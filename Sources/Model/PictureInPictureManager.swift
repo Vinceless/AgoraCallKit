@@ -24,37 +24,50 @@ public class PictureInPictureManager: NSObject {
     // 是否正在播放（用于 AVPictureInPictureSampleBufferPlaybackDelegate）
     private var isPlaying: Bool = true
     
+    // 上一帧的时间戳（确保递增）
+    private var lastEnqueuedTimestamp: CMTime = .zero
+    
+    // 是否已经初始化
+    private var isSetup: Bool = false
+    
     private override init() {}
     
-    /// 初始化画中画视图（应在通话开始后调用，传入视频渲染视图的尺寸）
+    /// 初始化画中画视图（应在通话连接后、视图布局完成后调用）
     func setup(initialSize: CGSize) {
         videoSize = initialSize
         
         // 先清理旧的
         cleanup()
         
+        // 尺寸不能为零
+        let safeSize = initialSize.width > 0 && initialSize.height > 0 ? initialSize : CGSize(width: 360, height: 640)
+        
         // 创建 AVSampleBufferDisplayLayer 用于渲染视频帧
         let displayLayer = AVSampleBufferDisplayLayer()
-        displayLayer.videoGravity = .resizeAspectFill
-        displayLayer.frame = CGRect(origin: .zero, size: initialSize)
+        displayLayer.videoGravity = .resizeAspect
+        displayLayer.frame = CGRect(origin: .zero, size: safeSize)
         self.sampleBufferDisplayLayer = displayLayer
         
         // 创建一个 view 来持有 displayLayer，并将其添加到当前 key window 上
         // AVPictureInPictureController 要求 layer 必须在一个 window 的 view 层级中
-        let renderView = UIView(frame: CGRect(origin: .zero, size: initialSize))
+        let renderView = UIView(frame: CGRect(origin: .zero, size: safeSize))
         renderView.layer.addSublayer(displayLayer)
-        renderView.alpha = 0.01  // 几乎不可见，但仍在视图层级中
+        // 注意：alpha 不能为 0！PiP 系统要求内容可见，alpha 为 0 会被系统忽略
+        // 使用 0.01 是不够的，必须在可见范围内
+        renderView.alpha = 1.0
         renderView.isUserInteractionEnabled = false
-        renderView.backgroundColor = .black
+        renderView.backgroundColor = .clear
+        // 将 renderView 放到屏幕外（仍然在 window 层级中，但用户看不到）
+        renderView.frame = CGRect(x: -safeSize.width, y: -safeSize.height, width: safeSize.width, height: safeSize.height)
         pipRenderView = renderView
         
         // 将 renderView 添加到 key window
         if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
             window.addSubview(renderView)
-            print("[PiP] renderView added to key window")
+            print("[PiP] renderView added to key window, frame=\(renderView.frame)")
         } else if let window = UIApplication.shared.windows.first {
             window.addSubview(renderView)
-            print("[PiP] renderView added to first window")
+            print("[PiP] renderView added to first window, frame=\(renderView.frame)")
         } else {
             print("[PiP] Warning: No window found for PiP renderView")
         }
@@ -69,52 +82,52 @@ public class PictureInPictureManager: NSObject {
                 )
                 pipController = AVPictureInPictureController(contentSource: contentSource)
                 pipController?.delegate = self
-                print("[PiP] Controller created with ContentSource (iOS 15+)")
+                // 关键：设置自动启动，这样 App 进入后台时系统会自动启动 PiP
+                // 不能在后台手动调用 startPictureInPicture()，必须在后台之前由系统自动触发
+                pipController?.canStartPictureInPictureAutomaticallyFromInline = true
+                print("[PiP] Controller created with ContentSource (iOS 15+), autoStart=true")
             } else {
                 // iOS 14: 不支持 AVSampleBufferDisplayLayer 的 PiP
-                // 需要使用 AVPlayerLayer，但无法直接推送原始帧
                 print("[PiP] Warning: iOS 14 does not support AVSampleBufferDisplayLayer PiP")
                 return
             }
-            if #available(iOS 14.2, *) {
-                pipController?.canStartPictureInPictureAutomaticallyFromInline = true
-            }
+            isSetup = true
         } else {
             print("[PiP] Error: Picture in Picture not supported on this device")
         }
     }
     
-    /// 启动画中画
+    /// 手动启动画中画（必须在 App 前台时调用）
     func start() {
         guard let controller = pipController else {
             print("[PiP] Error: pipController is nil, setup not called or failed")
             return
         }
         
+        guard isSetup else {
+            print("[PiP] Error: setup not completed")
+            return
+        }
+        
         isPlaying = true
         print("[PiP] Attempting to start, isPictureInPicturePossible = \(controller.isPictureInPicturePossible)")
         
-        if controller.isPictureInPicturePossible {
-            controller.startPictureInPicture()
-        } else {
-            // 可能需要等待视频帧到达后才能启动
-            print("[PiP] Not possible yet, retrying in 0.5s...")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self = self, let controller = self.pipController else { return }
-                print("[PiP] Retry: isPictureInPicturePossible = \(controller.isPictureInPicturePossible)")
-                if controller.isPictureInPicturePossible {
-                    controller.startPictureInPicture()
-                } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        print("[PiP] Final retry: isPictureInPicturePossible = \(controller.isPictureInPicturePossible)")
-                        if controller.isPictureInPicturePossible {
-                            controller.startPictureInPicture()
-                        } else {
-                            print("[PiP] Failed: isPictureInPicturePossible still false after retries")
-                        }
-                    }
+        // 确保 renderView 在 window 层级中
+        if pipRenderView?.window == nil {
+            if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+                if let renderView = pipRenderView {
+                    window.addSubview(renderView)
+                    print("[PiP] renderView re-added to key window")
                 }
             }
+        }
+        
+        if controller.isPictureInPicturePossible {
+            controller.startPictureInPicture()
+            print("[PiP] startPictureInPicture called")
+        } else {
+            print("[PiP] isPictureInPicturePossible = false, cannot start now")
+            print("[PiP] PiP will auto-start when app goes to background if canStartPictureInPictureAutomaticallyFromInline = true")
         }
     }
     
@@ -129,16 +142,27 @@ public class PictureInPictureManager: NSObject {
         sampleBufferDisplayLayer = nil
         pipRenderView?.removeFromSuperview()
         pipRenderView = nil
+        isSetup = false
+        lastEnqueuedTimestamp = .zero
     }
     
     /// 接收视频帧（由 Agora 回调调用）
     func enqueueVideoFrame(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard let displayLayer = sampleBufferDisplayLayer else { return }
         
+        // 确保时间戳递增（AVSampleBufferDisplayLayer 要求）
+        let safeTimestamp: CMTime
+        if timestamp <= lastEnqueuedTimestamp {
+            safeTimestamp = CMTimeAdd(lastEnqueuedTimestamp, CMTime(value: 1, timescale: 30))
+        } else {
+            safeTimestamp = timestamp
+        }
+        lastEnqueuedTimestamp = safeTimestamp
+        
         var sampleBuffer: CMSampleBuffer?
         var timingInfo = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
-            presentationTimeStamp: timestamp,
+            presentationTimeStamp: safeTimestamp,
             decodeTimeStamp: .invalid
         )
         var formatDescription: CMFormatDescription?
@@ -147,7 +171,10 @@ public class PictureInPictureManager: NSObject {
             imageBuffer: pixelBuffer,
             formatDescriptionOut: &formatDescription
         )
-        guard status == noErr, let formatDesc = formatDescription else { return }
+        guard status == noErr, let formatDesc = formatDescription else {
+            print("[PiP] Error: CMVideoFormatDescriptionCreateForImageBuffer failed with status \(status)")
+            return
+        }
         
         let result = CMSampleBufferCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
@@ -165,6 +192,8 @@ public class PictureInPictureManager: NSObject {
                 displayLayer.flush()
             }
             displayLayer.enqueue(buffer)
+        } else {
+            print("[PiP] Error: CMSampleBufferCreateForImageBuffer failed with result \(result)")
         }
     }
 }
@@ -204,29 +233,24 @@ extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
 @available(iOS 15.0, *)
 extension PictureInPictureManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     
-    /// PiP 控制器请求开始或暂停播放
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
         isPlaying = playing
         print("[PiP] setPlaying: \(playing)")
     }
     
-    /// 返回可播放的时间范围（直播流返回无限范围）
     public func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
         // 实时通话，使用无限时间范围
         return CMTimeRange(start: .zero, duration: .positiveInfinity)
     }
     
-    /// 返回当前是否暂停
     public func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
         return !isPlaying
     }
     
-    /// PiP 窗口大小变化回调
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {
         print("[PiP] Render size changed: \(newRenderSize.width)x\(newRenderSize.height)")
     }
     
-    /// 快进/快退（实时通话不需要实现，空操作即可）
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
         completionHandler()
     }

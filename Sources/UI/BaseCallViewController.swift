@@ -140,6 +140,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     // 是否启用画中画
     private var isPictureInPictureActive = false
+    // 是否已初始化画中画（防止 viewDidAppear 重复调用）
+    private var isPictureInPictureSetup = false
     
     // MARK: - 生命周期
     open override func viewDidLoad() {
@@ -148,9 +150,14 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         callManager.uiDelegate = self
         setupBaseUI()
         setupActions()
-        setupPictureInPicture()
         updateUIForState(callManager.currentState)
         
+    }
+    
+    open override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // 注册通知（不需要等连接，提前注册以便收到后台通知）
+        registerNotifications()
     }
     
     // MARK: - UI 设置（子类可重写以调整布局）
@@ -227,30 +234,27 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         rejectCallButton.addTarget(self, action: #selector(rejectCall), for: .touchUpInside)
     }
     
-    // 设置画中画事件
-    open func setupPictureInPicture() {
+    // 注册通知（在 viewDidAppear 中调用）
+    private func registerNotifications() {
+        guard !isPictureInPictureSetup else { return }
+        isPictureInPictureSetup = true
         
-        // 如果是视频通话，初始化画中画管理器
+        // 如果是视频通话，监听画中画事件
         if callType == .video {
-                // 假设本地视频视图为 localVideoView（子类应提供，这里用本地视图尺寸）
-                let videoSize = localVideoView?.bounds.size ?? CGSize(width: 640, height: 480)
-                PictureInPictureManager.shared.setup(initialSize: videoSize)
-                
-                // 监听画中画事件
-                NotificationCenter.default.addObserver(self,
-                                                       selector: #selector(pipWillStart),
-                                                       name: .pipWillStart,
-                                                       object: nil)
-                NotificationCenter.default.addObserver(self,
-                                                       selector: #selector(pipDidStop),
-                                                       name: .pipDidStop,
-                                                       object: nil)
+            NotificationCenter.default.addObserver(self,
+                                                   selector: #selector(pipWillStart),
+                                                   name: .pipWillStart,
+                                                   object: nil)
+            NotificationCenter.default.addObserver(self,
+                                                   selector: #selector(pipDidStop),
+                                                   name: .pipDidStop,
+                                                   object: nil)
         }
         // 监听 App 进入后台
-           NotificationCenter.default.addObserver(self,
-                                                  selector: #selector(applicationDidEnterBackground),
-                                                  name: UIApplication.didEnterBackgroundNotification,
-                                                  object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(applicationDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil)
         // 监听 App 返回前台
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(applicationWillEnterForeground),
@@ -258,18 +262,27 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                                                object: nil)
     }
     
+    // 初始化画中画（在视频通话连接后调用，确保视图有正确的 bounds 和 window）
+    private func initPictureInPicture() {
+        guard callType == .video else { return }
+        let videoSize = localVideoView?.bounds.size ?? CGSize(width: 360, height: 640)
+        let safeSize = videoSize.width > 0 && videoSize.height > 0 ? videoSize : CGSize(width: 360, height: 640)
+        PictureInPictureManager.shared.setup(initialSize: safeSize)
+        print("[BaseCall] PiP initialized with size: \(safeSize)")
+    }
+    
     @objc private func applicationDidEnterBackground() {
         print("[BaseCall] applicationDidEnterBackground: callType=\(String(describing: callType)), state=\(callManager.currentState), pipActive=\(isPictureInPictureActive)")
         guard callType == .video,
               callManager.currentState == .connected,
               !isPictureInPictureActive else { return }
-        // 先启用外部视频源模式（必须，用于画中画）
-        callManager.engine.enableExternalVideoSource()
         
-        // 延迟一点启动画中画，让视频帧先开始流动
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            PictureInPictureManager.shared.start()
-        }
+        // 确保外部视频源模式已启用（帧回调供 PiP 使用）
+        // PiP 会由系统自动启动（canStartPictureInPictureAutomaticallyFromInline = true）
+        // 不能在后台手动调用 startPictureInPicture()，系统会拒绝并报错：
+        // "The UIScene for the content source has an activation state other than UISceneActivationStateForegroundActive"
+        callManager.engine.enableExternalVideoSource()
+        print("[PiP] External video source enabled, PiP will auto-start when system detects app going to background")
     }
     
     @objc private func applicationWillEnterForeground() {
@@ -429,6 +442,12 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     open func didConnect(withUser user: CallUser) {
         // 子类可重写
+        // 视频通话连接后，只初始化画中画视图
+        // 注意：不在前台启用 setVideoFrameDelegate，否则会拦截 Agora 内部渲染管线导致视频卡住
+        // 帧回调只在进入后台时才启用（供 PiP 使用），返回前台时立即禁用
+        if callType == .video {
+            initPictureInPicture()
+        }
     }
     
     open func didDisconnect(error: Error?) {

@@ -138,28 +138,31 @@ public class AgoraEngineManager: NSObject {
     }
     
     // MARK: - 外部视频源控制（用于画中画）
-    /// 启用外部视频源模式（用于画中画）
+    /// 启用视频帧回调（用于画中画）
     /// 调用此方法后，视频帧将通过 PIPVideoFrameDelegate 回调
+    /// 注意：不使用 setExternalVideoSource，因为那会让 Agora 期望外部推送帧
+    /// 我们只需要通过 setVideoFrameDelegate 获取帧回调，让 Agora 内部渲染继续正常工作
     public func enableExternalVideoSource() {
         guard !isExternalVideoSourceEnabled else { return }
         videoFrameDelegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
         engine?.setVideoFrameDelegate(videoFrameDelegate)
-        // 使用新 API：sourceType 为 .videoFrame 表示原始视频帧
-        engine?.setExternalVideoSource(true, useTexture: true, sourceType: .videoFrame)
+        // 注意：不调用 setExternalVideoSource(true, ...)！
+        // setExternalVideoSource(true) 会让 Agora 期望外部推送帧，导致默认渲染失效
+        // 我们只需要 setVideoFrameDelegate 来获取帧回调供 PiP 使用
         isExternalVideoSourceEnabled = true
+        print("[AgoraEngine] enableExternalVideoSource: videoFrameDelegate set for PiP")
     }
     
-    /// 禁用外部视频源模式，恢复默认渲染
+    /// 禁用视频帧回调，恢复正常渲染
     public func disableExternalVideoSource() {
         guard isExternalVideoSourceEnabled else { return }
         engine?.setVideoFrameDelegate(nil)
-        engine?.setExternalVideoSource(false, useTexture: true, sourceType: .videoFrame)
         isExternalVideoSourceEnabled = false
         // 重新启用内部渲染：重启预览让 Agora 重新初始化渲染管线
         if isVideoEnabled {
             engine?.startPreview()
         }
-        print("[AgoraEngine] disableExternalVideoSource: external source disabled, preview restarted")
+        print("[AgoraEngine] disableExternalVideoSource: videoFrameDelegate removed, preview restarted")
     }
     
     // MARK: - 本地视频渲染
