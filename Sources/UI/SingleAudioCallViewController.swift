@@ -14,7 +14,7 @@ open class SingleAudioCallViewController: BaseCallViewController {
     private let avatarImageView: UIImageView = {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFill
-        iv.layer.cornerRadius = 75
+        iv.layer.cornerRadius = 8
         iv.clipsToBounds = true
         iv.backgroundColor = .systemGray5
         iv.image = UIImage(systemName: "person.circle.fill")
@@ -24,7 +24,7 @@ open class SingleAudioCallViewController: BaseCallViewController {
     
     private let nameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 24, weight: .medium)
+        label.font = .systemFont(ofSize: 20, weight: .medium)
         label.textAlignment = .center
         label.textColor = .white
         return label
@@ -41,31 +41,32 @@ open class SingleAudioCallViewController: BaseCallViewController {
     }
     
     private func setupAudioUI() {
-        let stack = UIStackView(arrangedSubviews: [avatarImageView, nameLabel, statusLabel, durationLabel])
+        let stack = UIStackView(arrangedSubviews: [durationLabel, avatarImageView, nameLabel, statusLabel])
         stack.axis = .vertical
-        stack.spacing = 20
+        stack.spacing = 12
         stack.alignment = .center
         view.addSubview(stack)
+        
+        stack.setCustomSpacing(150, after: durationLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
         
         avatarImageView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            avatarImageView.widthAnchor.constraint(equalToConstant: 150),
-            avatarImageView.heightAnchor.constraint(equalToConstant: 150),
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -50)
+            avatarImageView.widthAnchor.constraint(equalToConstant: 100),
+            avatarImageView.heightAnchor.constraint(equalToConstant: 100),
+            nameLabel.heightAnchor.constraint(equalToConstant: 30),
+            statusLabel.heightAnchor.constraint(equalToConstant: 15),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
         
-        // 调整状态标签和时长标签的颜色
-        statusLabel.textColor = .lightGray
-        durationLabel.textColor = .lightGray
     }
     
     private func setupRemoteUserInfo() {
         if let remoteUserId = remoteUserId {
             nameLabel.text = remoteUserId
         } else {
-            nameLabel.text = "等待对方加入..."
+            nameLabel.text = "正在等待对方加入..."
         }
     }
     
@@ -75,7 +76,7 @@ open class SingleAudioCallViewController: BaseCallViewController {
         case .calling:
             statusLabel.text = "呼叫中..."
         case .incoming:
-            statusLabel.text = "来电..."
+            statusLabel.text = "对方邀请你语音通话..."
         case .connected:
             statusLabel.text = "通话中"
         case .disconnected:

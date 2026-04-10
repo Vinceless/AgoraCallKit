@@ -22,7 +22,7 @@ open class BaseIncomingCallView: UIView {
     /// 来电用户
     public var callUser: CallUser?
     /// 通话类型
-    public var callType: CallType = .audio
+    public var callType: CallType = .voice
     /// 头像URL（可选）
     public var avatarURL: URL?
     
@@ -178,7 +178,7 @@ open class BaseIncomingCallView: UIView {
     // MARK: - 显示与隐藏动画
     open func show(in view: UIView, completion: (() -> Void)? = nil) {
         self.alpha = 0
-        self.transform = CGAffineTransform(translationX: 0, y: -200)
+        self.transform = CGAffineTransform(translationX: 0, y: -88)
         view.addSubview(self)
         self.frame = view.bounds
         UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5, options: .curveEaseOut) {

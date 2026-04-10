@@ -10,7 +10,7 @@ import Foundation
 // MARK: - 通话类型枚举
 
 public enum CallType: String {
-    case audio  // 音频通话
+    case voice  // 音频通话
     case video  // 视频通话
     
     public var description: String { rawValue }

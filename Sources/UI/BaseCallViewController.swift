@@ -23,7 +23,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     public let statusLabel: UILabel = {
         let label = UILabel()
         label.textAlignment = .center
-        label.font = .systemFont(ofSize: 16)
+        label.font = .systemFont(ofSize: 14)
         label.textColor = .white
         return label
     }()
@@ -31,8 +31,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     public let durationLabel: UILabel = {
         let label = UILabel()
         label.textAlignment = .center
-        label.font = .monospacedDigitSystemFont(ofSize: 14, weight: .medium)
-        label.textColor = .lightGray
+        label.font = .monospacedDigitSystemFont(ofSize: 16, weight: .medium)
+        label.textColor = .white
         return label
     }()
     
@@ -41,7 +41,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         btn.setImage(UIImage(systemName: "mic.fill"), for: .normal)
         btn.setImage(UIImage(systemName: "mic.slash.fill"), for: .selected)
         btn.tintColor = .white
-        btn.backgroundColor = UIColor.darkGray.withAlphaComponent(0.6)
+        btn.backgroundColor = .black
         btn.layer.cornerRadius = 30
         return btn
     }()
@@ -51,17 +51,17 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         btn.setImage(UIImage(systemName: "video.fill"), for: .normal)
         btn.setImage(UIImage(systemName: "video.slash.fill"), for: .selected)
         btn.tintColor = .white
-        btn.backgroundColor = UIColor.darkGray.withAlphaComponent(0.6)
+        btn.backgroundColor = .black
         btn.layer.cornerRadius = 30
         return btn
     }()
     
     public let speakerButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "speaker.wave.1.fill"), for: .normal)
-        btn.setImage(UIImage(systemName: "speaker.wave.2.fill"), for: .selected)
+        btn.setImage(UIImage(systemName: "speaker.wave.2.fill"), for: .normal)
+        btn.setImage(UIImage(systemName: "speaker.slash.fill"), for: .selected)
         btn.tintColor = .white
-        btn.backgroundColor = UIColor.darkGray.withAlphaComponent(0.6)
+        btn.backgroundColor = .black
         btn.layer.cornerRadius = 30
         return btn
     }()
@@ -70,7 +70,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         let btn = UIButton(type: .system)
         btn.setImage(UIImage(systemName: "camera.rotate.fill"), for: .normal)
         btn.tintColor = .white
-        btn.backgroundColor = UIColor.darkGray.withAlphaComponent(0.6)
+        btn.backgroundColor = .black
         btn.layer.cornerRadius = 30
         return btn
     }()
@@ -86,7 +86,23 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     public let acceptCallButton: UIButton = {
         let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "phone.fill"), for: .normal)
+        if #available(iOS 15.0, *) {
+            var config = UIButton.Configuration.filled()
+            config.baseBackgroundColor = .systemGreen
+            config.baseForegroundColor = .white
+            config.image = UIImage(systemName: "phone.fill")
+            config.title = "接听"
+            config.imagePlacement = .top
+            config.imagePadding = 10
+            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 15, bottom: 0, trailing: 15)
+            // 按钮背景圆角
+            config.cornerStyle = .medium // 或者固定值
+        } else {
+            btn.setImage(UIImage(systemName: "phone.fill"), for: .normal)
+            btn.setTitle("接听", for: .normal)
+        }
+           
+        
         btn.tintColor = .white
         btn.backgroundColor = .systemGreen
         btn.layer.cornerRadius = 30
@@ -103,10 +119,25 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }()
     
     // 控制按钮容器（子类可替换布局）
+    
+    public let actionStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 20
+        stack.distribution = .equalSpacing
+        return stack
+    }()
+    
     public let controlStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .horizontal
-        stack.spacing = 20
+        stack.distribution = .equalSpacing
+        return stack
+    }()
+    
+    public let callStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
         stack.distribution = .equalSpacing
         return stack
     }()
@@ -130,25 +161,36 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     open func setupBaseUI() {
         // 将控制按钮添加到 stack
         controlStackView.addArrangedSubview(muteAudioButton)
-        controlStackView.addArrangedSubview(muteVideoButton)
-        controlStackView.addArrangedSubview(speakerButton)
-        controlStackView.addArrangedSubview(switchCameraButton)
         controlStackView.addArrangedSubview(endCallButton)
-        view.addSubview(controlStackView)
+        controlStackView.addArrangedSubview(speakerButton)
+        controlStackView.addArrangedSubview(muteVideoButton)
+        
+        // 将接听/拒绝按钮也添加到 callStackView
+        callStackView.addArrangedSubview(rejectCallButton)
+        callStackView.addArrangedSubview(acceptCallButton)
+        callStackView.addArrangedSubview(switchCameraButton)
+        
+        view.addSubview(actionStackView)
+        actionStackView.addArrangedSubview(controlStackView)
+        actionStackView.addArrangedSubview(callStackView)
         controlStackView.translatesAutoresizingMaskIntoConstraints = false
+        callStackView.translatesAutoresizingMaskIntoConstraints = false
+        actionStackView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            controlStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            controlStackView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
-            controlStackView.heightAnchor.constraint(equalToConstant: 60)
+            actionStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            actionStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            actionStackView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -70),
+            controlStackView.heightAnchor.constraint(equalToConstant: 100),
+            callStackView.heightAnchor.constraint(equalToConstant: 100),
         ])
         
         // 设置按钮大小
-        let buttons = [muteAudioButton, muteVideoButton, speakerButton, switchCameraButton, endCallButton, acceptCallButton, rejectCallButton]
+        let buttons = [muteAudioButton, muteVideoButton, speakerButton, endCallButton, switchCameraButton, acceptCallButton, rejectCallButton]
         buttons.forEach { button in
             button.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: 60),
-                button.heightAnchor.constraint(equalToConstant: 60)
+                button.widthAnchor.constraint(equalToConstant: 100),
+                button.heightAnchor.constraint(equalToConstant: 100)
             ])
         }
         
@@ -177,18 +219,6 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         acceptCallButton.isHidden = true
         rejectCallButton.isHidden = true
         
-        // 将接听/拒绝按钮也添加到 view，但不在 stack 中（由子类决定布局）
-        view.addSubview(acceptCallButton)
-        view.addSubview(rejectCallButton)
-        acceptCallButton.translatesAutoresizingMaskIntoConstraints = false
-        rejectCallButton.translatesAutoresizingMaskIntoConstraints = false
-        // 简单放置在底部左右两侧，子类可重写
-        NSLayoutConstraint.activate([
-            acceptCallButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -50),
-            acceptCallButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
-            rejectCallButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 50),
-            rejectCallButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30)
-        ])
     }
     
     open func setupActions() {

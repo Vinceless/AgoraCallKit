@@ -24,10 +24,18 @@ public class IncomingCallManager {
     public func show(_ view: BaseIncomingCallView, in parentView: UIView? = nil) {
         hide()
         currentView = view
-        let targetView = parentView ?? UIApplication.shared.keyWindow ?? UIApplication.shared.windows.first
+        let targetView = parentView ?? firstWindow
         guard let targetView = targetView else { return }
         presentingView = targetView
         view.show(in: targetView)
+    }
+    
+    var firstWindow: UIWindow? {
+        if #available(iOS 13.0, *) {
+            return UIApplication.shared.connectedScenes.filter { $0.activationState == .foregroundActive }.compactMap { $0 as? UIWindowScene }.last?.windows.last(where: { $0.isKeyWindow })
+        } else {
+            return UIApplication.shared.keyWindow
+        }
     }
     
     /// 隐藏当前弹窗

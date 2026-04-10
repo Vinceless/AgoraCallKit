@@ -77,7 +77,7 @@ public class CallManager {
             switch result {
             case .success(let token):
                 self?.currentToken = token
-                let success = self?.engine.joinChannel(channelName, token: token, uid: 0, isVideoCall: callType == .video) ?? false
+                let success = self?.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video) ?? false
                 if !success {
                     self?.failWithError("加入频道失败", completion: completion)
                     return
@@ -234,6 +234,9 @@ public class CallManager {
     
     /// 收到单聊来电（由 App 层调用）
     public func receiveIncomingCall(fromUserId: String, channelName: String, token: String, callType: CallType) {
+        /// 如果是自己发起的就跳过
+        guard fromUserId != currentRemoteUserId else { return }
+        /// 空闲才往下走，不然就拒绝
         guard currentState == .idle else {
             signalDelegate?.sendRejectResponse(toUserId: fromUserId, reason: "busy") { _ in }
             return
