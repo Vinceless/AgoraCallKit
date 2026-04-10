@@ -25,7 +25,9 @@ open class PIPVideoFrameDelegate: NSObject, AgoraVideoFrameDelegate {
             let timestamp = CMTime(value: CMTimeValue(frame.renderTimeMs), timescale: 1000)
             pipManager?.enqueueVideoFrame(pixelBuffer, timestamp: timestamp)
         }
-        return true  // 返回 true 表示继续处理
+        // 返回 false：让 Agora SDK 内部也继续处理该帧，保持默认渲染管线正常工作
+        // 这样即使在 PiP 模式下，Agora 的本地和远程渲染也不会中断
+        return false
     }
     
     // 远端渲染的视频帧

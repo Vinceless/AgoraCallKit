@@ -30,6 +30,16 @@ open class SingleVideoCallViewController: BaseCallViewController {
         miniVideoView
     }
     
+    /// 画中画停止后恢复远程视频渲染
+    open override func restoreVideoViewsAfterPip() {
+        super.restoreVideoViewsAfterPip()
+        // 重新设置远程视频渲染视图
+        if let uid = remoteUid {
+            callManager.setupRemoteVideoView(remoteVideoView, forUid: uid)
+            print("[SingleVideo] restoreVideoViewsAfterPip: remote video re-setup for uid=\(uid)")
+        }
+    }
+    
     private let remoteAvatarImageView: UIImageView = {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFill
@@ -84,10 +94,8 @@ open class SingleVideoCallViewController: BaseCallViewController {
             remoteVideoView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
-        // 本地视频小窗
+        // 本地视频小窗（使用 frame 布局，不用 Auto Layout）
         view.addSubview(miniVideoView)
-        miniVideoView.translatesAutoresizingMaskIntoConstraints = false
-        // 约束在 viewDidLayoutSubviews 中手动设置 frame，这里不做约束，以便更灵活
         
         // 远程信息视图
         let infoContainer = UIView()
@@ -145,6 +153,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     // MARK: - 重写连接回调，设置本地视频
     open override func didConnect(withUser user: CallUser) {
         super.didConnect(withUser: user)
+        print("[SingleVideo] didConnect: miniVideoView.bounds=\(miniVideoView.bounds), window=\(miniVideoView.window != nil)")
         // 通话连接后设置本地视频渲染
         callManager.setupLocalVideoView(miniVideoView)
         // 关键：启动本地视频预览

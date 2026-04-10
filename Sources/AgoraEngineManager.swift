@@ -96,6 +96,8 @@ public class AgoraEngineManager: NSObject {
     public func joinChannel(_ channel: String, token: String?, uid: UInt, isVideoCall: Bool) -> Bool {
         guard let engine = engine else { return false }
         
+        print("[AgoraEngine] joinChannel: channel=\(channel), uid=\(uid), isVideoCall=\(isVideoCall)")
+        
         if isVideoCall {
             engine.enableVideo()
             isVideoEnabled = true
@@ -109,6 +111,7 @@ public class AgoraEngineManager: NSObject {
         option.channelProfile = .communication
         
         let result = engine.joinChannel(byToken: token, channelId: channel, uid: uid, mediaOptions: option)
+        print("[AgoraEngine] joinChannel result: \(result)")
         if result == 0 {
             currentChannel = channel
             return true
@@ -118,6 +121,7 @@ public class AgoraEngineManager: NSObject {
     
     /// 开始本地视频预览（在 enableVideo 和 setupLocalVideo 之后调用）
     public func startPreview() {
+        print("[AgoraEngine] startPreview called, isVideoEnabled=\(isVideoEnabled)")
         engine?.startPreview()
     }
     
@@ -151,10 +155,16 @@ public class AgoraEngineManager: NSObject {
         engine?.setVideoFrameDelegate(nil)
         engine?.setExternalVideoSource(false, useTexture: true, sourceType: .videoFrame)
         isExternalVideoSourceEnabled = false
+        // 重新启用内部渲染：重启预览让 Agora 重新初始化渲染管线
+        if isVideoEnabled {
+            engine?.startPreview()
+        }
+        print("[AgoraEngine] disableExternalVideoSource: external source disabled, preview restarted")
     }
     
     // MARK: - 本地视频渲染
     public func setupLocalVideoView(_ view: UIView) {
+        print("[AgoraEngine] setupLocalVideoView: view=\(view), bounds=\(view.bounds), window=\(view.window != nil)")
         let canvas = AgoraRtcVideoCanvas()
         canvas.view = view
         canvas.renderMode = .hidden

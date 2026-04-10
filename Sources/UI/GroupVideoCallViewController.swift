@@ -262,4 +262,14 @@ open class GroupVideoCallViewController: BaseCallViewController {
     public override func getCurrentCallDuration() -> TimeInterval {
         return callManager.getCurrentDuration()
     }
+    
+    /// 画中画停止后恢复远程视频渲染
+    open override func restoreVideoViewsAfterPip() {
+        super.restoreVideoViewsAfterPip()
+        // 重新设置所有远程视频渲染视图
+        for (uid, videoView) in videoViews where uid != 0 {
+            callManager.setupRemoteVideoView(videoView, forUid: uid)
+            print("[GroupVideo] restoreVideoViewsAfterPip: remote video re-setup for uid=\(uid)")
+        }
+    }
 }

@@ -139,7 +139,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }()
     
     // 是否启用画中画
-    private var isPictureInPictureActive = true
+    private var isPictureInPictureActive = false
     
     // MARK: - 生命周期
     open override func viewDidLoad() {
@@ -251,9 +251,15 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                                                   selector: #selector(applicationDidEnterBackground),
                                                   name: UIApplication.didEnterBackgroundNotification,
                                                   object: nil)
+        // 监听 App 返回前台
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(applicationWillEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil)
     }
     
     @objc private func applicationDidEnterBackground() {
+        print("[BaseCall] applicationDidEnterBackground: callType=\(String(describing: callType)), state=\(callManager.currentState), pipActive=\(isPictureInPictureActive)")
         guard callType == .video,
               callManager.currentState == .connected,
               !isPictureInPictureActive else { return }
@@ -263,6 +269,25 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         // 延迟一点启动画中画，让视频帧先开始流动
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             PictureInPictureManager.shared.start()
+        }
+    }
+    
+    @objc private func applicationWillEnterForeground() {
+        print("[BaseCall] applicationWillEnterForeground: pipActive=\(isPictureInPictureActive)")
+        // 如果画中画没有激活（即用户直接切回前台，没有触发PiP），需要恢复渲染
+        // 注意：如果 PiP 激活中，用户点击 PiP 窗口恢复时，会走 pipDidStop 的 restoreUserInterface 流程
+        if isPictureInPictureActive {
+            // PiP 正在运行，停止 PiP 让用户界面恢复
+            PictureInPictureManager.shared.stop()
+        }
+        // 确保外部视频源模式被禁用，恢复正常渲染
+        if callType == .video && callManager.currentState == .connected {
+            callManager.engine.disableExternalVideoSource()
+            // 重新设置视频渲染视图
+            if let localVideoView = localVideoView {
+                callManager.setupLocalVideoView(localVideoView)
+                callManager.startPreview()
+            }
         }
     }
 
@@ -281,9 +306,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         // 重新设置 Agora 的本地渲染视图
         if let localVideoView = localVideoView {
             callManager.setupLocalVideoView(localVideoView)
-            // 重新启动本地视频预览
             callManager.startPreview()
         }
+        // 子类需要重写此方法来恢复远程视频视图
+        restoreVideoViewsAfterPip()
         
 //        if shouldRestoreFloatingWindowAfterPip && callManager.currentState == .connected {
 //                if let topVC = UIApplication.shared.topViewController(), topVC is BaseCallViewController {
@@ -298,6 +324,11 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     // 子类需要提供 localVideoView
     open var localVideoView: UIView? {
         return nil
+    }
+    
+    /// 画中画停止后恢复视频渲染视图，子类重写以恢复远程视频等
+    open func restoreVideoViewsAfterPip() {
+        // 子类重写
     }
     
     // MARK: - 控制方法（子类可重写或添加额外逻辑）
