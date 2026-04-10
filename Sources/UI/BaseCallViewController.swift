@@ -231,7 +231,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     open func setupPictureInPicture() {
         
         // 如果是视频通话，初始化画中画管理器
-//            if callType == .video {
+        if callType == .video {
                 // 假设本地视频视图为 localVideoView（子类应提供，这里用本地视图尺寸）
                 let videoSize = localVideoView?.bounds.size ?? CGSize(width: 640, height: 480)
                 PictureInPictureManager.shared.setup(initialSize: videoSize)
@@ -245,7 +245,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                                                        selector: #selector(pipDidStop),
                                                        name: .pipDidStop,
                                                        object: nil)
-//            }
+        }
         // 监听 App 进入后台
            NotificationCenter.default.addObserver(self,
                                                   selector: #selector(applicationDidEnterBackground),
@@ -257,8 +257,13 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         guard callType == .video,
               callManager.currentState == .connected,
               !isPictureInPictureActive else { return }
-        // 启动画中画
-        PictureInPictureManager.shared.start()
+        // 先启用外部视频源模式（必须，用于画中画）
+        callManager.engine.enableExternalVideoSource()
+        
+        // 延迟一点启动画中画，让视频帧先开始流动
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            PictureInPictureManager.shared.start()
+        }
     }
 
     @objc private func pipWillStart() {
@@ -269,12 +274,15 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
 
     @objc private func pipDidStop() {
         isPictureInPictureActive = false
+        // 禁用外部视频源模式，恢复正常渲染
+        callManager.engine.disableExternalVideoSource()
         // 恢复本地视频视图
         localVideoView?.isHidden = false
-        // 注意：从画中画返回后，可能需要重新设置 Agora 的本地渲染视图
-        // 如果之前移除了，需要重新调用 setupLocalVideoView
+        // 重新设置 Agora 的本地渲染视图
         if let localVideoView = localVideoView {
             callManager.setupLocalVideoView(localVideoView)
+            // 重新启动本地视频预览
+            callManager.startPreview()
         }
         
 //        if shouldRestoreFloatingWindowAfterPip && callManager.currentState == .connected {

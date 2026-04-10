@@ -233,6 +233,14 @@ public class CallManager {
         engine.setupRemoteVideoView(view, forUid: uid)
     }
     
+    public func startPreview() {
+        engine.startPreview()
+    }
+    
+    public func stopPreview() {
+        engine.stopPreview()
+    }
+    
     // MARK: - 信令接收（由 App 层信令模块调用）
     
     /// 收到单聊来电（由 App 层调用）

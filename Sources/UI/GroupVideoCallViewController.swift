@@ -40,6 +40,10 @@ open class GroupVideoCallViewController: BaseCallViewController {
     open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateVideoLayout()
+        // 重新设置本地视频渲染，确保布局完成后视频渲染器正确初始化
+        if let localView = videoViews[0] {
+            callManager.setupLocalVideoView(localView)
+        }
     }
     
     private func setupGroupVideoUI() {
@@ -100,8 +104,11 @@ open class GroupVideoCallViewController: BaseCallViewController {
     
     open override func didConnect(withUser user: CallUser) {
         super.didConnect(withUser: user)
+        // 通话连接后设置本地视频渲染
         if let view = videoViews[0] {
-//            view.subviews.first?.text = user.name
+            callManager.setupLocalVideoView(view)
+            // 关键：启动本地视频预览
+            callManager.startPreview()
         }
         updateUserCountLabel()
     }

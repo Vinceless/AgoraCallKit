@@ -68,6 +68,8 @@ open class SingleVideoCallViewController: BaseCallViewController {
             width: 120,
             height: 160
         )
+        // 重新设置本地视频渲染，确保视图尺寸正确后初始化视频渲染器
+        callManager.setupLocalVideoView(miniVideoView)
     }
     
     // MARK: - UI 设置
@@ -131,11 +133,22 @@ open class SingleVideoCallViewController: BaseCallViewController {
         case .connected:
             // 连接成功后隐藏头像占位图，显示视频
             remoteAvatarImageView.isHidden = true
+            // 连接成功后设置本地视频渲染
+            callManager.setupLocalVideoView(miniVideoView)
         case .disconnected, .failed:
             remoteAvatarImageView.isHidden = false
         default:
             break
         }
+    }
+    
+    // MARK: - 重写连接回调，设置本地视频
+    open override func didConnect(withUser user: CallUser) {
+        super.didConnect(withUser: user)
+        // 通话连接后设置本地视频渲染
+        callManager.setupLocalVideoView(miniVideoView)
+        // 关键：启动本地视频预览
+        callManager.startPreview()
     }
     
     open override func updateDuration(_ duration: TimeInterval) {

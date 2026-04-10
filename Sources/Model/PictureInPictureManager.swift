@@ -16,14 +16,18 @@ public class PictureInPictureManager: NSObject {
     
     private var pipController: AVPictureInPictureController?
     private var sampleBufferDisplayLayer: AVSampleBufferDisplayLayer?
-    private var playerLayer: AVPlayerLayer?  // 用于包装 displayLayer
+    private var playerLayer: AVPlayerLayer?
     private var videoSize: CGSize = .zero
+    
+    // 背景渲染目标视图（用于画中画时持有 layer）
+    private var backgroundRenderView: UIView?
     
     private override init() {}
     
     /// 初始化画中画视图（应在通话开始后调用，传入视频渲染视图的尺寸）
     func setup(initialSize: CGSize) {
         videoSize = initialSize
+        
         // 创建 AVSampleBufferDisplayLayer 用于渲染视频帧
         let layer = AVSampleBufferDisplayLayer()
         layer.videoGravity = .resizeAspectFill
@@ -31,22 +35,46 @@ public class PictureInPictureManager: NSObject {
         sampleBufferDisplayLayer = layer
         
         // 创建 AVPlayerLayer 包装 displayLayer（AVPictureInPictureController 需要）
-        let playerLayer = AVPlayerLayer(player: nil)  // 不需要播放器，仅用其 layer 作为容器
+        let playerLayer = AVPlayerLayer(player: nil)
         playerLayer.addSublayer(layer)
+        playerLayer.frame = CGRect(origin: .zero, size: initialSize)
         self.playerLayer = playerLayer
+        
+        // 创建背景视图来持有 playerLayer
+        let bgView = UIView(frame: CGRect(origin: .zero, size: initialSize))
+        bgView.layer.addSublayer(playerLayer)
+        backgroundRenderView = bgView
         
         // 创建画中画控制器
         if AVPictureInPictureController.isPictureInPictureSupported() {
             pipController = AVPictureInPictureController(playerLayer: playerLayer)
             pipController?.delegate = self
+            // 启用 PiP 前需要先启用相关属性
+            if #available(iOS 14.2, *) {
+                pipController?.canStartPictureInPictureAutomaticallyFromInline = true
+            } else {
+                // Fallback on earlier versions
+            }
         }
     }
     
     /// 启动画中画
     func start() {
-        guard let controller = pipController else { return }
+        guard let controller = pipController else {
+            print("PiP Error: pipController is nil")
+            return
+        }
+        
         if controller.isPictureInPicturePossible {
             controller.startPictureInPicture()
+        } else {
+            print("PiP Error: PiP not possible, isPictureInPicturePossible = false")
+            // 可能需要等待一段时间后重试
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                if controller.isPictureInPicturePossible {
+                    controller.startPictureInPicture()
+                }
+            }
         }
     }
     
@@ -61,7 +89,7 @@ public class PictureInPictureManager: NSObject {
         
         var sampleBuffer: CMSampleBuffer?
         var timingInfo = CMSampleTimingInfo(
-            duration: .invalid,
+            duration: CMTime(value: 1, timescale: 30), // 假设30fps
             presentationTimeStamp: timestamp,
             decodeTimeStamp: .invalid
         )
@@ -85,10 +113,13 @@ public class PictureInPictureManager: NSObject {
         )
         
         if result == noErr, let buffer = sampleBuffer {
-            if displayLayer.status == .failed {
-                displayLayer.flush()
+            // 确保在主线程操作
+            DispatchQueue.main.async {
+                if displayLayer.status == .failed {
+                    displayLayer.flush()
+                }
+                displayLayer.enqueue(buffer)
             }
-            displayLayer.enqueue(buffer)
         }
     }
 }

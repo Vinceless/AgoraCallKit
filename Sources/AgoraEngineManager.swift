@@ -40,6 +40,8 @@ public class AgoraEngineManager: NSObject {
     
     // 画中画代理
     private var videoFrameDelegate: PIPVideoFrameDelegate?
+    // 是否已启用外部视频源模式（用于 PiP）
+    private var isExternalVideoSourceEnabled: Bool = false
     
     private override init() {
         super.init()
@@ -66,15 +68,17 @@ public class AgoraEngineManager: NSObject {
                                                               orientationMode: .fixedPortrait,
                                                               mirrorMode: .auto)
             engine?.setVideoEncoderConfiguration(videoConfig)
-        // 设置视频帧代理（用于画中画）
-            videoFrameDelegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
-            engine?.setVideoFrameDelegate(videoFrameDelegate)
+        // 注意：不要在 configure 中默认设置视频帧代理！
+        // 设置 setVideoFrameDelegate 会启用外部视频源模式，导致默认渲染失效
+        // 视频帧代理只在需要画中画时才设置，详见 enableExternalVideoSource() 方法
     }
     
     // 在清理时移除代理
     public func destroy() {
-        engine?.setVideoFrameDelegate(nil)
-        // ...
+        disableExternalVideoSource()
+        engine?.leaveChannel()
+        AgoraRtcEngineKit.destroy()
+        engine = nil
     }
     
     private func setupAudioSession() {
@@ -112,9 +116,41 @@ public class AgoraEngineManager: NSObject {
         return false
     }
     
+    /// 开始本地视频预览（在 enableVideo 和 setupLocalVideo 之后调用）
+    public func startPreview() {
+        engine?.startPreview()
+    }
+    
+    /// 停止本地视频预览
+    public func stopPreview() {
+        engine?.stopPreview()
+    }
+    
     public func leaveChannel() {
+        // 离开频道时禁用外部视频源模式
+        disableExternalVideoSource()
         engine?.leaveChannel()
         currentChannel = nil
+    }
+    
+    // MARK: - 外部视频源控制（用于画中画）
+    /// 启用外部视频源模式（用于画中画）
+    /// 调用此方法后，视频帧将通过 PIPVideoFrameDelegate 回调
+    public func enableExternalVideoSource() {
+        guard !isExternalVideoSourceEnabled else { return }
+        videoFrameDelegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
+        engine?.setVideoFrameDelegate(videoFrameDelegate)
+        // 使用新 API：sourceType 为 .videoFrame 表示原始视频帧
+        engine?.setExternalVideoSource(true, useTexture: true, sourceType: .videoFrame)
+        isExternalVideoSourceEnabled = true
+    }
+    
+    /// 禁用外部视频源模式，恢复默认渲染
+    public func disableExternalVideoSource() {
+        guard isExternalVideoSourceEnabled else { return }
+        engine?.setVideoFrameDelegate(nil)
+        engine?.setExternalVideoSource(false, useTexture: true, sourceType: .videoFrame)
+        isExternalVideoSourceEnabled = false
     }
     
     // MARK: - 本地视频渲染
