@@ -38,10 +38,8 @@ public class AgoraEngineManager: NSObject {
     private var currentChannel: String?
     private var isVideoEnabled: Bool = false
     
-    // 画中画代理
-    private var videoFrameDelegate: PIPVideoFrameDelegate?
-    // 是否已启用外部视频源模式（用于 PiP）
-    private var isExternalVideoSourceEnabled: Bool = false
+    // PiP 视频帧代理
+    private var pipVideoFrameDelegate: PIPVideoFrameDelegate?
     
     private override init() {
         super.init()
@@ -68,14 +66,13 @@ public class AgoraEngineManager: NSObject {
                                                               orientationMode: .fixedPortrait,
                                                               mirrorMode: .auto)
             engine?.setVideoEncoderConfiguration(videoConfig)
-        // 注意：不要在 configure 中默认设置视频帧代理！
-        // 设置 setVideoFrameDelegate 会启用外部视频源模式，导致默认渲染失效
-        // 视频帧代理只在需要画中画时才设置，详见 enableExternalVideoSource() 方法
+        // 注意：不要在 configure 中设置视频帧代理！
+        // PiP 视频帧代理在通话连接后通过 startPiPCapturer 启动
     }
     
-    // 在清理时移除代理
+    // 在清理时移除 PiP 采集器
     public func destroy() {
-        disableExternalVideoSource()
+        stopPiPCapturer()
         engine?.leaveChannel()
         AgoraRtcEngineKit.destroy()
         engine = nil
@@ -131,38 +128,30 @@ public class AgoraEngineManager: NSObject {
     }
     
     public func leaveChannel() {
-        // 离开频道时禁用外部视频源模式
-        disableExternalVideoSource()
+        // 离开频道时停止 PiP 采集器
+        stopPiPCapturer()
         engine?.leaveChannel()
         currentChannel = nil
     }
     
-    // MARK: - 外部视频源控制（用于画中画）
-    /// 启用视频帧回调（用于画中画）
-    /// 调用此方法后，视频帧将通过 PIPVideoFrameDelegate 回调
-    /// 注意：不使用 setExternalVideoSource，因为那会让 Agora 期望外部推送帧
-    /// 我们只需要通过 setVideoFrameDelegate 获取帧回调，让 Agora 内部渲染继续正常工作
-    public func enableExternalVideoSource() {
-        guard !isExternalVideoSourceEnabled else { return }
-        videoFrameDelegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
-        engine?.setVideoFrameDelegate(videoFrameDelegate)
-        // 注意：不调用 setExternalVideoSource(true, ...)！
-        // setExternalVideoSource(true) 会让 Agora 期望外部推送帧，导致默认渲染失效
-        // 我们只需要 setVideoFrameDelegate 来获取帧回调供 PiP 使用
-        isExternalVideoSourceEnabled = true
-        print("[AgoraEngine] enableExternalVideoSource: videoFrameDelegate set for PiP")
+    // MARK: - PiP 视频帧代理
+    /// 启动 PiP 视频帧代理（通过 AgoraVideoFrameDelegate 获取视频帧）
+    /// processMode = .readOnly，不修改帧数据，不干扰 Agora 内部渲染管线
+    public func startPiPCapturer(remoteVideoView: UIView?) {
+        guard pipVideoFrameDelegate == nil else { return }
+        let delegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
+        engine?.setVideoFrameDelegate(delegate)
+        pipVideoFrameDelegate = delegate
+        print("[AgoraEngine] PiP video frame delegate started")
     }
     
-    /// 禁用视频帧回调，恢复正常渲染
-    public func disableExternalVideoSource() {
-        guard isExternalVideoSourceEnabled else { return }
-        engine?.setVideoFrameDelegate(nil)
-        isExternalVideoSourceEnabled = false
-        // 重新启用内部渲染：重启预览让 Agora 重新初始化渲染管线
-        if isVideoEnabled {
-            engine?.startPreview()
+    /// 停止 PiP 视频帧代理
+    public func stopPiPCapturer() {
+        if pipVideoFrameDelegate != nil {
+            engine?.setVideoFrameDelegate(nil)
+            pipVideoFrameDelegate = nil
+            print("[AgoraEngine] PiP video frame delegate stopped")
         }
-        print("[AgoraEngine] disableExternalVideoSource: videoFrameDelegate removed, preview restarted")
     }
     
     // MARK: - 本地视频渲染

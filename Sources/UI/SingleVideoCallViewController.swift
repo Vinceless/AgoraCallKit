@@ -11,7 +11,7 @@ import UIKit
 open class SingleVideoCallViewController: BaseCallViewController {
     
     // MARK: - UI 组件
-    private let remoteVideoView: UIView = {
+    private let remoteVideoContainer: UIView = {
         let view = UIView()
         view.backgroundColor = .black
         view.contentMode = .scaleAspectFill
@@ -30,13 +30,16 @@ open class SingleVideoCallViewController: BaseCallViewController {
         miniVideoView
     }
     
+    open override var remoteVideoView: UIView? {
+        remoteVideoContainer
+    }
+    
     /// 画中画停止后恢复远程视频渲染
     open override func restoreVideoViewsAfterPip() {
         super.restoreVideoViewsAfterPip()
         // 重新设置远程视频渲染视图
         if let uid = remoteUid {
-            callManager.setupRemoteVideoView(remoteVideoView, forUid: uid)
-            print("[SingleVideo] restoreVideoViewsAfterPip: remote video re-setup for uid=\(uid)")
+            callManager.setupRemoteVideoView(remoteVideoContainer, forUid: uid)
         }
     }
     
@@ -85,13 +88,13 @@ open class SingleVideoCallViewController: BaseCallViewController {
     // MARK: - UI 设置
     private func setupVideoUI() {
         // 远端视频占满全屏
-        view.insertSubview(remoteVideoView, at: 0)
-        remoteVideoView.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(remoteVideoContainer, at: 0)
+        remoteVideoContainer.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            remoteVideoView.topAnchor.constraint(equalTo: view.topAnchor),
-            remoteVideoView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            remoteVideoView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            remoteVideoView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            remoteVideoContainer.topAnchor.constraint(equalTo: view.topAnchor),
+            remoteVideoContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            remoteVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            remoteVideoContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
         // 本地视频小窗（使用 frame 布局，不用 Auto Layout）
@@ -169,7 +172,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     open override func remoteUserDidJoin(_ user: CallUser) {
         super.remoteUserDidJoin(user)
         remoteUid = user.uid
-        callManager.setupRemoteVideoView(remoteVideoView, forUid: user.uid)
+        callManager.setupRemoteVideoView(remoteVideoContainer, forUid: user.uid)
         remoteAvatarImageView.isHidden = true
         remoteNameLabel.text = user.name
     }

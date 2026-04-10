@@ -140,8 +140,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     // 是否启用画中画
     private var isPictureInPictureActive = false
-    // 是否已初始化画中画（防止 viewDidAppear 重复调用）
-    private var isPictureInPictureSetup = false
+    // 是否已注册通知（防止重复注册）
+    private var isNotificationsRegistered = false
     
     // MARK: - 生命周期
     open override func viewDidLoad() {
@@ -234,10 +234,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         rejectCallButton.addTarget(self, action: #selector(rejectCall), for: .touchUpInside)
     }
     
-    // 注册通知（在 viewDidAppear 中调用）
+    // 注册通知
     private func registerNotifications() {
-        guard !isPictureInPictureSetup else { return }
-        isPictureInPictureSetup = true
+        guard !isNotificationsRegistered else { return }
+        isNotificationsRegistered = true
         
         // 如果是视频通话，监听画中画事件
         if callType == .video {
@@ -265,42 +265,28 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     // 初始化画中画（在视频通话连接后调用，确保视图有正确的 bounds 和 window）
     private func initPictureInPicture() {
         guard callType == .video else { return }
-        let videoSize = localVideoView?.bounds.size ?? CGSize(width: 360, height: 640)
+        let videoSize = remoteVideoView?.bounds.size ?? localVideoView?.bounds.size ?? CGSize(width: 360, height: 640)
         let safeSize = videoSize.width > 0 && videoSize.height > 0 ? videoSize : CGSize(width: 360, height: 640)
         PictureInPictureManager.shared.setup(initialSize: safeSize)
+        // 启动视频帧代理，通过 AgoraVideoFrameDelegate 获取远端视频帧
+        callManager.engine.startPiPCapturer(remoteVideoView: remoteVideoView)
         print("[BaseCall] PiP initialized with size: \(safeSize)")
     }
     
     @objc private func applicationDidEnterBackground() {
-        print("[BaseCall] applicationDidEnterBackground: callType=\(String(describing: callType)), state=\(callManager.currentState), pipActive=\(isPictureInPictureActive)")
-        guard callType == .video,
-              callManager.currentState == .connected,
-              !isPictureInPictureActive else { return }
-        
-        // 确保外部视频源模式已启用（帧回调供 PiP 使用）
-        // PiP 会由系统自动启动（canStartPictureInPictureAutomaticallyFromInline = true）
-        // 不能在后台手动调用 startPictureInPicture()，系统会拒绝并报错：
-        // "The UIScene for the content source has an activation state other than UISceneActivationStateForegroundActive"
-        callManager.engine.enableExternalVideoSource()
-        print("[PiP] External video source enabled, PiP will auto-start when system detects app going to background")
+        guard callType == .video, isPictureInPictureActive == false else { return }
+        // 主动启动画中画
+        // canStartPictureInPictureAutomaticallyFromInline 在某些场景下可能不自动触发
+        // 需要在后台切换时手动调用 start
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            PictureInPictureManager.shared.start()
+        }
     }
     
     @objc private func applicationWillEnterForeground() {
-        print("[BaseCall] applicationWillEnterForeground: pipActive=\(isPictureInPictureActive)")
-        // 如果画中画没有激活（即用户直接切回前台，没有触发PiP），需要恢复渲染
-        // 注意：如果 PiP 激活中，用户点击 PiP 窗口恢复时，会走 pipDidStop 的 restoreUserInterface 流程
+        // 如果 PiP 正在运行，停止它
         if isPictureInPictureActive {
-            // PiP 正在运行，停止 PiP 让用户界面恢复
             PictureInPictureManager.shared.stop()
-        }
-        // 确保外部视频源模式被禁用，恢复正常渲染
-        if callType == .video && callManager.currentState == .connected {
-            callManager.engine.disableExternalVideoSource()
-            // 重新设置视频渲染视图
-            if let localVideoView = localVideoView {
-                callManager.setupLocalVideoView(localVideoView)
-                callManager.startPreview()
-            }
         }
     }
 
@@ -312,30 +298,19 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
 
     @objc private func pipDidStop() {
         isPictureInPictureActive = false
-        // 禁用外部视频源模式，恢复正常渲染
-        callManager.engine.disableExternalVideoSource()
-        // 恢复本地视频视图
+        // 恢复本地视频视图可见性
         localVideoView?.isHidden = false
-        // 重新设置 Agora 的本地渲染视图
-        if let localVideoView = localVideoView {
-            callManager.setupLocalVideoView(localVideoView)
-            callManager.startPreview()
-        }
-        // 子类需要重写此方法来恢复远程视频视图
+        // 子类重写此方法来恢复远程视频视图
         restoreVideoViewsAfterPip()
-        
-//        if shouldRestoreFloatingWindowAfterPip && callManager.currentState == .connected {
-//                if let topVC = UIApplication.shared.topViewController(), topVC is BaseCallViewController {
-//                    shouldRestoreFloatingWindowAfterPip = false
-//                } else {
-//                    NotificationCenter.default.post(name: .needRestoreFloatingWindow, object: nil)
-//                    shouldRestoreFloatingWindowAfterPip = false
-//                }
-//            }
     }
 
     // 子类需要提供 localVideoView
     open var localVideoView: UIView? {
+        return nil
+    }
+    
+    // 子类需要提供 remoteVideoView（供 PiP 截图使用）
+    open var remoteVideoView: UIView? {
         return nil
     }
     
@@ -369,6 +344,11 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     @objc open func endCall() {
         callManager.hangUp()
+        // 通话结束清理 PiP
+        if callType == .video {
+            callManager.engine.stopPiPCapturer()
+            PictureInPictureManager.shared.endCall()
+        }
         dismiss(animated: true)
     }
     
@@ -442,9 +422,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     open func didConnect(withUser user: CallUser) {
         // 子类可重写
-        // 视频通话连接后，只初始化画中画视图
-        // 注意：不在前台启用 setVideoFrameDelegate，否则会拦截 Agora 内部渲染管线导致视频卡住
-        // 帧回调只在进入后台时才启用（供 PiP 使用），返回前台时立即禁用
+        // 视频通话连接后，初始化画中画
         if callType == .video {
             initPictureInPicture()
         }
@@ -452,6 +430,11 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     open func didDisconnect(error: Error?) {
         // 子类可重写
+        // 通话结束时清理 PiP（防止通话结束后进后台还触发 PiP）
+        if callType == .video {
+            callManager.engine.stopPiPCapturer()
+            PictureInPictureManager.shared.endCall()
+        }
     }
     
     open func remoteUserDidJoin(_ user: CallUser) {

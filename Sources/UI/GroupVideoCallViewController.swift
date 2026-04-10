@@ -98,6 +98,11 @@ open class GroupVideoCallViewController: BaseCallViewController {
         return view
     }
     
+    open override var remoteVideoView: UIView? {
+        // 群聊中返回第一个远端用户的视频视图
+        videoViews.first(where: { $0.key != 0 })?.value
+    }
+    
     private func updateUserCountLabel() {
         userCountLabel.text = "在线: \(videoViews.count)"
     }
@@ -264,12 +269,12 @@ open class GroupVideoCallViewController: BaseCallViewController {
     }
     
     /// 画中画停止后恢复远程视频渲染
+    /// ReadOnly 模式下 Agora 渲染管线未中断，但需要重新绑定远程视频视图
     open override func restoreVideoViewsAfterPip() {
         super.restoreVideoViewsAfterPip()
         // 重新设置所有远程视频渲染视图
         for (uid, videoView) in videoViews where uid != 0 {
             callManager.setupRemoteVideoView(videoView, forUid: uid)
-            print("[GroupVideo] restoreVideoViewsAfterPip: remote video re-setup for uid=\(uid)")
         }
     }
 }
