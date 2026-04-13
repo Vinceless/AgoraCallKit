@@ -26,6 +26,8 @@ public protocol FloatingWindowCompatible: UIViewController {
     func endCallFromFloatingWindow()
     /// 获取当前通话时长（秒）
     func getCurrentCallDuration() -> TimeInterval
+    /// 从悬浮窗恢复全屏后调用（子类重写以重新绑定视频等）
+    func onRestoredFromFloatingWindow()
 }
 
 public extension FloatingWindowCompatible {
@@ -33,6 +35,7 @@ public extension FloatingWindowCompatible {
     func floatingWindowWillAppear() {}
     func floatingWindowDidDisappear() {}
     func floatingWindowDidTap() {}
+    func onRestoredFromFloatingWindow() {}
 }
 
 // MARK: - 悬浮窗管理器
