@@ -28,7 +28,6 @@ public class CallManager {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.uiDelegate?.callStateDidChange(self.currentState)
-                NotificationCenter.default.post(name: .callStateChanged, object: self.currentState)
             }
         }
     }
@@ -253,21 +252,21 @@ public class CallManager {
     
     /// 对方接受通话
     public func onCallAccepted(fromUserId: String) {
-        guard currentState == .calling, currentRemoteUser?.name == fromUserId else { return }
+        guard currentState == .calling, "\(currentRemoteUser?.uid ?? 0)" == fromUserId else { return }
         currentState = .connecting
         // 不在这里开始计时，等远端用户加入频道后再计时
     }
     
     /// 对方拒绝通话
     public func onCallRejected(fromUserId: String, reason: String?) {
-        guard currentState == .calling, currentRemoteUser?.name == fromUserId else { return }
+        guard currentState == .calling, "\(currentRemoteUser?.uid ?? 0)" == fromUserId else { return }
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
     }
     
     /// 对方挂断
     public func onCallHangup(fromUserId: String) {
-        guard currentRemoteUser?.name == fromUserId else { return }
+        guard "\(currentRemoteUser?.uid ?? 0)" == fromUserId else { return }
         engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
@@ -275,7 +274,7 @@ public class CallManager {
     
     /// 对方取消通话
     public func onCallCanceled(fromUserId: String) {
-        guard currentRemoteUser?.name == fromUserId else { return }
+        guard "\(currentRemoteUser?.uid ?? 0)" == fromUserId else { return }
         engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
@@ -293,6 +292,8 @@ public class CallManager {
     
     private func resetCall() {
         stopDurationTimer()
+        // 统一清理悬浮窗和画中画（必须在重置 currentCallType 之前）
+        cleanupFloatingAndPiP()
         isCaller = false
         currentState = .idle
         currentCallType = nil
@@ -302,6 +303,20 @@ public class CallManager {
         localUser = nil
         callStartTime = nil
         remoteUsers.removeAll()
+    }
+    
+    /// 统一清理悬浮窗和画中画
+    private func cleanupFloatingAndPiP() {
+        // 同步执行，确保后台也能立即清理
+        // 隐藏悬浮窗
+        if FloatingWindowManager.shared.isShowing() {
+            FloatingWindowManager.shared.hideFloatingWindow()
+        }
+        // 关闭画中画
+        if currentCallType == .video {
+            engine.stopPiPCapturer()
+            PictureInPictureManager.shared.endCall()
+        }
     }
     
     private func startDurationTimer() {
@@ -385,7 +400,8 @@ extension CallManager: AgoraEngineDelegate {
             DispatchQueue.main.async { [weak self] in
                 self?.uiDelegate?.remoteUserDidLeave(remoteUser)
             }
-            if currentState == .connected {
+            // 单聊：远端用户离开即结束通话（无论当前状态）
+            if currentState != .idle && currentState != .disconnected {
                 hangUp()
             }
         }

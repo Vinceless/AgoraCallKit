@@ -125,34 +125,10 @@ class FloatingCallWindow: UIViewController {
         setupUI()
         setupGestures()
         startDurationTimer()
-        registerCallStateNotification()
     }
     
     deinit {
         durationTimer?.invalidate()
-        NotificationCenter.default.removeObserver(self)
-    }
-    
-    /// 监听通话状态变化，通话结束时自动隐藏悬浮窗
-    private func registerCallStateNotification() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleCallStateChanged),
-            name: .callStateChanged,
-            object: nil
-        )
-    }
-    
-    @objc private func handleCallStateChanged(_ notification: Notification) {
-        guard let state = notification.object as? CallState else { return }
-        if state == .idle || state == .disconnected {
-            // 通话已结束，隐藏悬浮窗
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.view.removeFromSuperview()
-                FloatingWindowManager.shared.hideFloatingWindow()
-            }
-        }
     }
     
     func configure(with viewController: FloatingWindowCompatible) {
@@ -439,5 +415,4 @@ class FloatingCallWindow: UIViewController {
 // MARK: - 通知扩展
 public extension Notification.Name {
     static let needRestoreFloatingWindow = Notification.Name("needRestoreFloatingWindow")
-    static let callStateChanged = Notification.Name("callStateChanged")
 }

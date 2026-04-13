@@ -325,15 +325,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc open func endCall() {
-        // 先停止画中画，再挂断
-        if callType == .video {
-            callManager.engine.stopPiPCapturer()
-            PictureInPictureManager.shared.endCall()
-        }
-        // 隐藏悬浮窗
-        if FloatingWindowManager.shared.isShowing() {
-            FloatingWindowManager.shared.hideFloatingWindow()
-        }
+        // 悬浮窗和画中画由 CallManager.resetCall() 统一清理
         callManager.hangUp()
         dismiss(animated: true)
     }
@@ -413,15 +405,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             IncomingCallManager.shared.hide()
-            // 隐藏悬浮窗
-            if FloatingWindowManager.shared.isShowing() {
-                FloatingWindowManager.shared.hideFloatingWindow()
-            }
-            // 关闭画中画
-            if self.callType == .video {
-                self.callManager.engine.stopPiPCapturer()
-                PictureInPictureManager.shared.endCall()
-            }
+            // 悬浮窗和画中画由 CallManager.resetCall() 统一清理
             // 如果当前 VC 仍在显示，显示状态后延迟 dismiss
             if self.presentingViewController != nil {
                 self.statusLabel.text = error == nil ? "通话结束" : "通话失败"
