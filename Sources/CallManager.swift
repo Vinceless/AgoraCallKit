@@ -310,9 +310,9 @@ public class CallManager {
     }
     
     private func resetCall() {
+        currentState = .disconnected  // 先触发 disconnected 状态通知
         stopDurationTimer()
         isCaller = false
-        currentState = .idle
         currentCallType = nil
         currentChannel = nil
         currentRemoteUser = nil
@@ -320,6 +320,10 @@ public class CallManager {
         localUser = nil
         callStartTime = nil
         remoteUsers.removeAll()
+        /// 都处理完再设置为等待
+        DispatchQueue.main.async {
+            self.currentState = .idle
+        }
     }
     
     private func startDurationTimer() {

@@ -63,8 +63,8 @@ open class SingleAudioCallViewController: BaseCallViewController {
     }
     
     private func setupRemoteUserInfo() {
-            nameLabel.text = remoteUser?.name ?? "正在等待对方加入..."
-        }
+        nameLabel.text = remoteUser?.name ?? "正在等待对方加入..."
+    }
     
     open override func updateUIForState(_ state: CallState) {
         super.updateUIForState(state)
@@ -83,16 +83,21 @@ open class SingleAudioCallViewController: BaseCallViewController {
     }
     
     open override func remoteUserDidJoin(_ user: CallUser) {
-            super.remoteUserDidJoin(user)
-            nameLabel.text = user.name
-            statusLabel.text = "通话中"
-        }
-        
-        open override func remoteUserDidLeave(_ user: CallUser) {
-            super.remoteUserDidLeave(user)
-            nameLabel.text = "对方已离开"
-            statusLabel.text = "通话结束"
-        }
+        super.remoteUserDidJoin(user)
+        nameLabel.text = user.name
+        statusLabel.text = "通话中"
+    }
+    
+    open override func remoteUserDidLeave(_ user: CallUser) {
+        super.remoteUserDidLeave(user)
+        nameLabel.text = "对方已离开"
+        statusLabel.text = "通话结束"
+    }
+    
+    public override func didDisconnect(error: Error?) {
+        super.didDisconnect(error: error)
+        // 可选：显示提示后自动关闭
+    }
     
     // MARK: - 悬浮窗支持
     public override var floatingWindowTitle: String {

@@ -186,6 +186,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     public override func didDisconnect(error: Error?) {
         super.didDisconnect(error: error)
         // 可选：显示提示后自动关闭
+        callManager.stopPreview()
     }
     
     // MARK: - 悬浮窗支持
@@ -202,16 +203,27 @@ open class SingleVideoCallViewController: BaseCallViewController {
     }
     
     public override func getFloatingWindowVideoView() -> UIView? {
-        return localVideoView
-    }
-    
-    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
-        if let videoView = videoView {
-            videoView.frame = miniVideoView.bounds
-            videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            miniVideoView.addSubview(videoView)
+            // 确保远端用户已加入且有视图
+            return remoteUid != nil ? remoteVideoContainer : nil
         }
-    }
+    
+    /// 恢复时重新设置远端渲染（因为视图被移动过，重新绑定更安全）
+    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
+            // videoView 即之前在悬浮窗中展示的 remoteVideoContainer
+            // 重新添加到原位置（如果已被移除的话）
+            if let videoView = videoView, videoView.superview != view {
+                view.insertSubview(videoView, at: 0)
+                videoView.frame = view.bounds
+                videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            }
+            // 重新设置远端视频渲染画布，确保渲染正常
+            if let uid = remoteUid {
+                callManager.setupRemoteVideoView(remoteVideoContainer, forUid: uid)
+            }
+            // 本地小窗可能也需要重新设置渲染（因为它可能被隐藏过）
+            callManager.setupLocalVideoView(miniVideoView)
+            callManager.startPreview()
+        }
     
     public override func endCallFromFloatingWindow() {
         callManager.hangUp()

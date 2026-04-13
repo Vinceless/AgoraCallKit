@@ -435,6 +435,15 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             callManager.engine.stopPiPCapturer()
             PictureInPictureManager.shared.endCall()
         }
+//        DispatchQueue.main.async { [weak self] in
+//            guard let self = self else { return }
+//            // 更新状态文字
+//            self.statusLabel.text = error == nil ? "通话结束" : "通话失败"
+//            // 延迟关闭页面（避免突兀）
+//            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+//                self.dismiss(animated: true)
+//            }
+//        }
     }
     
     open func remoteUserDidJoin(_ user: CallUser) {
