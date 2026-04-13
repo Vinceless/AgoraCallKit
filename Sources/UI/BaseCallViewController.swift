@@ -59,13 +59,13 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }()
     
     // 底部控制按钮（上图下文，图片 65x65，背景透明）
-    public lazy var muteAudioButton: UIButton = createActionButton(imageName: "mic.fill", title: "静音")
-    public lazy var muteVideoButton: UIButton = createActionButton(imageName: "video.fill", title: "视频")
-    public lazy var speakerButton: UIButton = createActionButton(imageName: "speaker.wave.2.fill", title: "扬声器")
-    public lazy var switchCameraButton: UIButton = createActionButton(imageName: "camera.rotate.fill", title: "切换")
+    public lazy var muteAudioButton: UIButton = createActionButton(imageName: "mic.fill", title: "麦克风已关")
+    public lazy var muteVideoButton: UIButton = createActionButton(imageName: "video.fill", title: "摄像头已关")
+    public lazy var speakerButton: UIButton = createActionButton(imageName: "speaker.wave.2.fill", title: "扬声器已关")
+    public lazy var switchCameraButton: UIButton = createActionButton(imageName: "camera.rotate.fill", title: "切换镜头")
     public lazy var endCallButton: UIButton = createActionButton(imageName: "phone.down.fill", title: "挂断", tintColor: .systemRed)
     public lazy var acceptCallButton: UIButton = createActionButton(imageName: "phone.fill", title: "接听", tintColor: .systemGreen)
-    public lazy var rejectCallButton: UIButton = createActionButton(imageName: "phone.down.fill", title: "拒绝", tintColor: .systemRed)
+    public lazy var rejectCallButton: UIButton = createActionButton(imageName: "phone.down.fill", title: "挂断", tintColor: .systemRed)
     
     // 底部按钮容器
     public let actionStackView: UIStackView = {
@@ -93,6 +93,9 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     // 画中画相关
     private var isPictureInPictureActive = false
     private var isNotificationsRegistered = false
+    
+    // 悬浮窗恢复通知
+    private var isFloatingWindowObserverRegistered = false
     
     // MARK: - 辅助方法：创建上图下文的圆形按钮（图片 65x65，背景透明）
     private func createActionButton(imageName: String, title: String, tintColor: UIColor = .white) -> UIButton {
@@ -232,9 +235,32 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc private func minimizeTapped() {
+        // 注册恢复通知
+        if !isFloatingWindowObserverRegistered {
+            isFloatingWindowObserverRegistered = true
+            NotificationCenter.default.addObserver(self, selector: #selector(restoreFromFloatingWindowNotification), name: .needRestoreFloatingWindow, object: nil)
+        }
         FloatingWindowManager.shared.showFloatingWindow(from: self)
         dismiss(animated: true)
     }
+    
+    @objc private func restoreFromFloatingWindowNotification(_ notification: Notification) {
+        guard let vc = notification.object as? BaseCallViewController, vc === self else { return }
+        // 重新 present 当前控制器
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            var topVC = rootVC
+            while let presented = topVC.presentedViewController {
+                topVC = presented
+            }
+            topVC.present(self, animated: true) { [weak self] in
+                self?.onRestoredFromFloatingWindow()
+            }
+        }
+    }
+    
+    /// 从悬浮窗恢复后重新绑定视频（子类重写）
+    open func onRestoredFromFloatingWindow() { }
     
     // MARK: - 通知注册（画中画、前后台）
     private func registerNotifications() {
@@ -291,18 +317,30 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         let newState = !muteAudioButton.isSelected
         callManager.muteAudio(newState)
         muteAudioButton.isSelected = newState
+        updateButtonTitle(muteAudioButton, isOn: newState, onTitle: "麦克风已开", offTitle: "麦克风已关")
     }
     
     @objc open func toggleVideo() {
         let newState = !muteVideoButton.isSelected
         callManager.muteVideo(newState)
         muteVideoButton.isSelected = newState
+        updateButtonTitle(muteVideoButton, isOn: newState, onTitle: "摄像头已开", offTitle: "摄像头已关")
     }
     
     @objc open func toggleSpeaker() {
         let newState = !speakerButton.isSelected
         callManager.setSpeakerEnabled(newState)
         speakerButton.isSelected = newState
+        updateButtonTitle(speakerButton, isOn: newState, onTitle: "扬声器已开", offTitle: "扬声器已关")
+    }
+    
+    private func updateButtonTitle(_ button: UIButton, isOn: Bool, onTitle: String, offTitle: String) {
+        let title = isOn ? onTitle : offTitle
+        if #available(iOS 15.0, *) {
+            button.configuration?.title = title
+        } else {
+            button.setTitle(title, for: .normal)
+        }
     }
     
     @objc open func switchCamera() {
@@ -310,11 +348,16 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc open func endCall() {
-        callManager.hangUp()
+        // 先停止画中画，再挂断
         if callType == .video {
             callManager.engine.stopPiPCapturer()
             PictureInPictureManager.shared.endCall()
         }
+        // 隐藏悬浮窗
+        if FloatingWindowManager.shared.isShowing() {
+            FloatingWindowManager.shared.hideFloatingWindow()
+        }
+        callManager.hangUp()
         dismiss(animated: true)
     }
     

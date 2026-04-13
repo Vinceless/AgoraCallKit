@@ -269,14 +269,16 @@ public class CallManager {
     
     /// 对方挂断
     public func onCallHangup(fromUserId: String) {
-        guard currentState == .connected, currentRemoteUser?.name == fromUserId else { return }
+        guard currentRemoteUser?.name == fromUserId else { return }
+        engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
     }
     
     /// 对方取消通话
     public func onCallCanceled(fromUserId: String) {
-        guard currentState == .calling, currentRemoteUser?.name == fromUserId else { return }
+        guard currentRemoteUser?.name == fromUserId else { return }
+        engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
     }

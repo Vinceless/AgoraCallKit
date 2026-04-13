@@ -64,6 +64,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     }()
     
     private var remoteUid: UInt?
+    private var floatingVideoView: UIView?  // 悬浮窗专用的视频视图
     
     // MARK: - 生命周期
     open override func viewDidLoad() {
@@ -172,7 +173,12 @@ open class SingleVideoCallViewController: BaseCallViewController {
     open override func remoteUserDidJoin(_ user: CallUser) {
         super.remoteUserDidJoin(user)
         remoteUid = user.uid
+        // 绑定到全屏视图
         callManager.setupRemoteVideoView(remoteVideoContainer, forUid: user.uid)
+        // 如果悬浮窗存在，也绑定到悬浮窗视图
+        if let floatingView = floatingVideoView {
+            callManager.setupRemoteVideoView(floatingView, forUid: user.uid)
+        }
         remoteAvatarImageView.isHidden = true
         remoteNameLabel.text = user.name
     }
@@ -203,27 +209,41 @@ open class SingleVideoCallViewController: BaseCallViewController {
     }
     
     public override func getFloatingWindowVideoView() -> UIView? {
-            // 确保远端用户已加入且有视图
-            return remoteUid != nil ? remoteVideoContainer : nil
+        // 确保远端用户已加入
+        guard remoteUid != nil else { return nil }
+        // 创建悬浮窗专用的视频视图（复用已有或新建）
+        if floatingVideoView == nil {
+            floatingVideoView = UIView()
+            floatingVideoView?.backgroundColor = .black
+            floatingVideoView?.frame = CGRect(x: 0, y: 0, width: 110, height: 200)
         }
+        return floatingVideoView
+    }
     
-    /// 恢复时重新设置远端渲染（因为视图被移动过，重新绑定更安全）
-    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
-            // videoView 即之前在悬浮窗中展示的 remoteVideoContainer
-            // 重新添加到原位置（如果已被移除的话）
-            if let videoView = videoView, videoView.superview != view {
-                view.insertSubview(videoView, at: 0)
-                videoView.frame = view.bounds
-                videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            }
-            // 重新设置远端视频渲染画布，确保渲染正常
-            if let uid = remoteUid {
-                callManager.setupRemoteVideoView(remoteVideoContainer, forUid: uid)
-            }
-            // 本地小窗可能也需要重新设置渲染（因为它可能被隐藏过）
-            callManager.setupLocalVideoView(miniVideoView)
-            callManager.startPreview()
+    public override func bindRemoteVideoToFloatingView(_ view: UIView) {
+        // 将远端视频绑定到悬浮窗视图
+        if let uid = remoteUid {
+            callManager.setupRemoteVideoView(view, forUid: uid)
         }
+    }
+    
+    /// 恢复时重新设置远端渲染
+    public override func restoreFromFloatingWindow(_ videoView: UIView?) {
+        // 清除悬浮窗视图引用
+        floatingVideoView = nil
+    }
+    
+    /// 从悬浮窗恢复后重新绑定视频
+    public override func onRestoredFromFloatingWindow() {
+        super.onRestoredFromFloatingWindow()
+        // 重新设置远端视频渲染到原始容器
+        if let uid = remoteUid {
+            callManager.setupRemoteVideoView(remoteVideoContainer, forUid: uid)
+        }
+        // 本地小窗重新设置渲染
+        callManager.setupLocalVideoView(miniVideoView)
+        callManager.startPreview()
+    }
     
     public override func endCallFromFloatingWindow() {
         callManager.hangUp()

@@ -253,24 +253,24 @@ open class GroupVideoCallViewController: BaseCallViewController {
         }
     
     public override func restoreFromFloatingWindow(_ videoView: UIView?) {
-            if let videoView = videoView {
-                // 如果该视图尚未在 containerView 中，则重新添加
-                if videoView.superview != containerView {
-                    containerView.addSubview(videoView)
-                }
-                // 根据保存的 uid 重新绑定远端视频渲染
-                if let (uid, _) = videoViews.first(where: { $0.value == videoView }), uid != 0 {
-                    callManager.setupRemoteVideoView(videoView, forUid: uid)
-                }
-            }
-            // 恢复本地视频渲染
-            if let localView = videoViews[0] {
-                callManager.setupLocalVideoView(localView)
-                callManager.startPreview()
-            }
-            // 触发重新布局
-            updateVideoLayout()
+        // 不在此处重新绑定，在 onRestoredFromFloatingWindow 中处理
+    }
+    
+    /// 从悬浮窗恢复后重新绑定视频
+    public override func onRestoredFromFloatingWindow() {
+        super.onRestoredFromFloatingWindow()
+        // 重新设置所有远程视频渲染视图
+        for (uid, videoView) in videoViews where uid != 0 {
+            callManager.setupRemoteVideoView(videoView, forUid: uid)
         }
+        // 恢复本地视频渲染
+        if let localView = videoViews[0] {
+            callManager.setupLocalVideoView(localView)
+            callManager.startPreview()
+        }
+        // 触发重新布局
+        updateVideoLayout()
+    }
     
     public override func endCallFromFloatingWindow() {
         callManager.hangUp()
