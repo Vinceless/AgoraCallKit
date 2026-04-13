@@ -7,7 +7,7 @@
 
 import UIKit
 
-/// 通话界面基类，子类可继承并重写方法来定制 UI
+/// 通话界面基类，提供通用 UI 布局和状态管理
 open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWindowCompatible {
     
     // MARK: - 公共属性
@@ -15,7 +15,41 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     public var callType: CallType? { callManager.getCurrentCallType }
     public var remoteUser: CallUser? { callManager.getCurrentRemoteUser }
     
-    // 基础 UI 组件（子类可访问和修改）
+    // MARK: - UI 组件
+    
+    /// 顶部容器（用于放置缩小按钮和时长标签，保证居中对齐）
+    public let topBarView: UIView = {
+        let view = UIView()
+        view.backgroundColor = .clear
+        return view
+    }()
+    
+    /// 缩小按钮（悬浮窗入口）
+    public let minimizeButton: UIButton = {
+        let btn = UIButton(type: .system)
+        btn.setImage(UIImage(systemName: "arrow.down.right.and.arrow.up.left"), for: .normal)
+        btn.tintColor = .white
+        btn.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        btn.layer.cornerRadius = 20
+        btn.clipsToBounds = true
+        btn.isHidden = true
+        return btn
+    }()
+    
+    /// 通话时长标签（顶部居中）
+    public let durationLabel: UILabel = {
+        let label = UILabel()
+        label.textAlignment = .center
+        label.font = .monospacedDigitSystemFont(ofSize: 16, weight: .medium)
+        label.textColor = .white
+//        label.backgroundColor = UIColor.black.withAlphaComponent(0.4)
+        label.layer.cornerRadius = 12
+        label.clipsToBounds = true
+        label.isHidden = true
+        return label
+    }()
+    
+    /// 状态标签（呼叫中/通话中等）
     public let statusLabel: UILabel = {
         let label = UILabel()
         label.textAlignment = .center
@@ -24,98 +58,16 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         return label
     }()
     
-    public let durationLabel: UILabel = {
-        let label = UILabel()
-        label.textAlignment = .center
-        label.font = .monospacedDigitSystemFont(ofSize: 16, weight: .medium)
-        label.textColor = .white
-        return label
-    }()
+    // 底部控制按钮（上图下文，图片 65x65，背景透明）
+    public lazy var muteAudioButton: UIButton = createActionButton(imageName: "mic.fill", title: "静音")
+    public lazy var muteVideoButton: UIButton = createActionButton(imageName: "video.fill", title: "视频")
+    public lazy var speakerButton: UIButton = createActionButton(imageName: "speaker.wave.2.fill", title: "扬声器")
+    public lazy var switchCameraButton: UIButton = createActionButton(imageName: "camera.rotate.fill", title: "切换")
+    public lazy var endCallButton: UIButton = createActionButton(imageName: "phone.down.fill", title: "挂断", tintColor: .systemRed)
+    public lazy var acceptCallButton: UIButton = createActionButton(imageName: "phone.fill", title: "接听", tintColor: .systemGreen)
+    public lazy var rejectCallButton: UIButton = createActionButton(imageName: "phone.down.fill", title: "拒绝", tintColor: .systemRed)
     
-    public let muteAudioButton: UIButton = {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "mic.fill"), for: .normal)
-        btn.setImage(UIImage(systemName: "mic.slash.fill"), for: .selected)
-        btn.tintColor = .white
-        btn.backgroundColor = .black
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    public let muteVideoButton: UIButton = {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "video.fill"), for: .normal)
-        btn.setImage(UIImage(systemName: "video.slash.fill"), for: .selected)
-        btn.tintColor = .white
-        btn.backgroundColor = .black
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    public let speakerButton: UIButton = {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "speaker.wave.2.fill"), for: .normal)
-        btn.setImage(UIImage(systemName: "speaker.slash.fill"), for: .selected)
-        btn.tintColor = .white
-        btn.backgroundColor = .black
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    public let switchCameraButton: UIButton = {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "camera.rotate.fill"), for: .normal)
-        btn.tintColor = .white
-        btn.backgroundColor = .black
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    public let endCallButton: UIButton = {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "phone.down.fill"), for: .normal)
-        btn.tintColor = .white
-        btn.backgroundColor = .systemRed
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    public let acceptCallButton: UIButton = {
-        let btn = UIButton(type: .system)
-        if #available(iOS 15.0, *) {
-            var config = UIButton.Configuration.filled()
-            config.baseBackgroundColor = .systemGreen
-            config.baseForegroundColor = .white
-            config.image = UIImage(systemName: "phone.fill")
-            config.title = "接听"
-            config.imagePlacement = .top
-            config.imagePadding = 10
-            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 15, bottom: 0, trailing: 15)
-            // 按钮背景圆角
-            config.cornerStyle = .medium // 或者固定值
-        } else {
-            btn.setImage(UIImage(systemName: "phone.fill"), for: .normal)
-            btn.setTitle("接听", for: .normal)
-        }
-           
-        
-        btn.tintColor = .white
-        btn.backgroundColor = .systemGreen
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    public let rejectCallButton: UIButton = {
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: "phone.down.fill"), for: .normal)
-        btn.tintColor = .white
-        btn.backgroundColor = .systemRed
-        btn.layer.cornerRadius = 30
-        return btn
-    }()
-    
-    // 控制按钮容器（子类可替换布局）
-    
+    // 底部按钮容器
     public let actionStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .vertical
@@ -138,10 +90,41 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         return stack
     }()
     
-    // 是否启用画中画
+    // 画中画相关
     private var isPictureInPictureActive = false
-    // 是否已注册通知（防止重复注册）
     private var isNotificationsRegistered = false
+    
+    // MARK: - 辅助方法：创建上图下文的圆形按钮（图片 65x65，背景透明）
+    private func createActionButton(imageName: String, title: String, tintColor: UIColor = .white) -> UIButton {
+        let btn = UIButton(type: .system)
+        btn.tintColor = tintColor
+        btn.backgroundColor = .clear
+        btn.layer.cornerRadius = 12
+        btn.clipsToBounds = true
+        
+        if #available(iOS 15.0, *) {
+            var config = UIButton.Configuration.plain()
+            config.image = UIImage(systemName: imageName)
+            config.title = title
+            config.imagePlacement = .top
+            config.imagePadding = 10
+            config.baseForegroundColor = tintColor
+            config.baseBackgroundColor = .clear
+            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
+            btn.configuration = config
+        } else {
+            btn.setImage(UIImage(systemName: imageName), for: .normal)
+            btn.setTitle(title, for: .normal)
+            btn.titleLabel?.font = .systemFont(ofSize: 12)
+            btn.imageView?.contentMode = .scaleAspectFit
+            btn.imageEdgeInsets = UIEdgeInsets(top: -15, left: 0, bottom: 0, right: 0)
+            btn.titleEdgeInsets = UIEdgeInsets(top: 55, left: -60, bottom: 0, right: 0)
+            btn.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        }
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        return btn
+    }
     
     // MARK: - 生命周期
     open override func viewDidLoad() {
@@ -151,24 +134,57 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         setupBaseUI()
         setupActions()
         updateUIForState(callManager.currentState)
-        
     }
     
     open override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // 注册通知（不需要等连接，提前注册以便收到后台通知）
         registerNotifications()
     }
     
-    // MARK: - UI 设置（子类可重写以调整布局）
+    // MARK: - UI 布局
     open func setupBaseUI() {
-        // 将控制按钮添加到 stack
+        // 顶部栏布局（缩小按钮左侧，时长标签居中）
+        view.addSubview(topBarView)
+        topBarView.addSubview(minimizeButton)
+        topBarView.addSubview(durationLabel)
+        
+        topBarView.translatesAutoresizingMaskIntoConstraints = false
+        minimizeButton.translatesAutoresizingMaskIntoConstraints = false
+        durationLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            topBarView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            topBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topBarView.heightAnchor.constraint(equalToConstant: 60),
+            
+            minimizeButton.leadingAnchor.constraint(equalTo: topBarView.leadingAnchor, constant: 16),
+            minimizeButton.centerYAnchor.constraint(equalTo: topBarView.centerYAnchor),
+            minimizeButton.widthAnchor.constraint(equalToConstant: 40),
+            minimizeButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            durationLabel.centerXAnchor.constraint(equalTo: topBarView.centerXAnchor),
+            durationLabel.centerYAnchor.constraint(equalTo: topBarView.centerYAnchor),
+            durationLabel.heightAnchor.constraint(equalToConstant: 30),
+            durationLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 70)
+        ])
+        
+        // 状态标签（默认放在顶部栏下方，子类可重写位置）
+        view.addSubview(statusLabel)
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            statusLabel.topAnchor.constraint(equalTo: topBarView.bottomAnchor, constant: 20),
+            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20)
+        ])
+        
+        // 底部控制按钮
         controlStackView.addArrangedSubview(muteAudioButton)
         controlStackView.addArrangedSubview(endCallButton)
         controlStackView.addArrangedSubview(speakerButton)
         controlStackView.addArrangedSubview(muteVideoButton)
         
-        // 将接听/拒绝按钮也添加到 callStackView
         callStackView.addArrangedSubview(rejectCallButton)
         callStackView.addArrangedSubview(acceptCallButton)
         callStackView.addArrangedSubview(switchCameraButton)
@@ -176,52 +192,33 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         view.addSubview(actionStackView)
         actionStackView.addArrangedSubview(controlStackView)
         actionStackView.addArrangedSubview(callStackView)
+        
+        actionStackView.translatesAutoresizingMaskIntoConstraints = false
         controlStackView.translatesAutoresizingMaskIntoConstraints = false
         callStackView.translatesAutoresizingMaskIntoConstraints = false
-        actionStackView.translatesAutoresizingMaskIntoConstraints = false
+        
         NSLayoutConstraint.activate([
-            actionStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            actionStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            actionStackView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -70),
-            controlStackView.heightAnchor.constraint(equalToConstant: 100),
-            callStackView.heightAnchor.constraint(equalToConstant: 100),
+            actionStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            actionStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            actionStackView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            controlStackView.heightAnchor.constraint(equalToConstant: 90),
+            callStackView.heightAnchor.constraint(equalToConstant: 90),
         ])
         
-        // 设置按钮大小
         let buttons = [muteAudioButton, muteVideoButton, speakerButton, endCallButton, switchCameraButton, acceptCallButton, rejectCallButton]
         buttons.forEach { button in
-            button.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: 100),
-                button.heightAnchor.constraint(equalToConstant: 100)
-            ])
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentHuggingPriority(.required, for: .vertical)
         }
         
-        // 状态标签
-        view.addSubview(statusLabel)
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            statusLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 80),
-            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20)
-        ])
-        
-        // 时长标签
-        view.addSubview(durationLabel)
-        durationLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            durationLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            durationLabel.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8)
-        ])
-        
-        // 默认隐藏视频相关按钮（等子类根据 callType 显示）
+        // 初始隐藏视频相关按钮
         muteVideoButton.isHidden = true
         switchCameraButton.isHidden = true
-        // 来电接听/拒绝按钮默认隐藏，它们会在收到来电时显示
         acceptCallButton.isHidden = true
         rejectCallButton.isHidden = true
         
+        // 添加缩小按钮点击事件
+        minimizeButton.addTarget(self, action: #selector(minimizeTapped), for: .touchUpInside)
     }
     
     open func setupActions() {
@@ -234,92 +231,62 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         rejectCallButton.addTarget(self, action: #selector(rejectCall), for: .touchUpInside)
     }
     
-    // 注册通知
+    @objc private func minimizeTapped() {
+        FloatingWindowManager.shared.showFloatingWindow(from: self)
+        dismiss(animated: true)
+    }
+    
+    // MARK: - 通知注册（画中画、前后台）
     private func registerNotifications() {
         guard !isNotificationsRegistered else { return }
         isNotificationsRegistered = true
-        
-        // 如果是视频通话，监听画中画事件
         if callType == .video {
-            NotificationCenter.default.addObserver(self,
-                                                   selector: #selector(pipWillStart),
-                                                   name: .pipWillStart,
-                                                   object: nil)
-            NotificationCenter.default.addObserver(self,
-                                                   selector: #selector(pipDidStop),
-                                                   name: .pipDidStop,
-                                                   object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(pipWillStart), name: .pipWillStart, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(pipDidStop), name: .pipDidStop, object: nil)
         }
-        // 监听 App 进入后台
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(applicationDidEnterBackground),
-                                               name: UIApplication.didEnterBackgroundNotification,
-                                               object: nil)
-        // 监听 App 返回前台
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(applicationWillEnterForeground),
-                                               name: UIApplication.willEnterForegroundNotification,
-                                               object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationDidEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillEnterForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
     }
     
-    // 初始化画中画（在视频通话连接后调用，确保视图有正确的 bounds 和 window）
     private func initPictureInPicture() {
         guard callType == .video else { return }
         let videoSize = remoteVideoView?.bounds.size ?? localVideoView?.bounds.size ?? CGSize(width: 360, height: 640)
-        let safeSize = videoSize.width > 0 && videoSize.height > 0 ? videoSize : CGSize(width: 360, height: 640)
-        PictureInPictureManager.shared.setup(initialSize: safeSize)
-        // 启动视频帧代理，通过 AgoraVideoFrameDelegate 获取远端视频帧
+        PictureInPictureManager.shared.setup(initialSize: videoSize)
         callManager.engine.startPiPCapturer(remoteVideoView: remoteVideoView)
-        print("[BaseCall] PiP initialized with size: \(safeSize)")
     }
     
     @objc private func applicationDidEnterBackground() {
-        guard callType == .video, isPictureInPictureActive == false else { return }
-        // 主动启动画中画
-        // canStartPictureInPictureAutomaticallyFromInline 在某些场景下可能不自动触发
-        // 需要在后台切换时手动调用 start
+        guard callType == .video, !isPictureInPictureActive else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             PictureInPictureManager.shared.start()
         }
     }
     
     @objc private func applicationWillEnterForeground() {
-        // 如果 PiP 正在运行，停止它
         if isPictureInPictureActive {
             PictureInPictureManager.shared.stop()
         }
     }
-
+    
     @objc private func pipWillStart() {
         isPictureInPictureActive = true
-        // 隐藏本地视频视图（避免重复渲染）
         localVideoView?.isHidden = true
     }
-
+    
     @objc private func pipDidStop() {
         isPictureInPictureActive = false
-        // 恢复本地视频视图可见性
         localVideoView?.isHidden = false
-        // 子类重写此方法来恢复远程视频视图
         restoreVideoViewsAfterPip()
     }
-
-    // 子类需要提供 localVideoView
-    open var localVideoView: UIView? {
-        return nil
-    }
     
-    // 子类需要提供 remoteVideoView（供 PiP 截图使用）
-    open var remoteVideoView: UIView? {
-        return nil
-    }
+    /// 本地视频视图（子类重写）
+    open var localVideoView: UIView? { nil }
+    /// 远端视频视图（子类重写）
+    open var remoteVideoView: UIView? { nil }
+    /// 画中画停止后恢复视频渲染（子类重写）
+    open func restoreVideoViewsAfterPip() { }
     
-    /// 画中画停止后恢复视频渲染视图，子类重写以恢复远程视频等
-    open func restoreVideoViewsAfterPip() {
-        // 子类重写
-    }
-    
-    // MARK: - 控制方法（子类可重写或添加额外逻辑）
+    // MARK: - 控制方法
     @objc open func toggleAudio() {
         let newState = !muteAudioButton.isSelected
         callManager.muteAudio(newState)
@@ -344,7 +311,6 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     @objc open func endCall() {
         callManager.hangUp()
-        // 通话结束清理 PiP
         if callType == .video {
             callManager.engine.stopPiPCapturer()
             PictureInPictureManager.shared.endCall()
@@ -354,7 +320,6 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     @objc open func acceptCall() {
         callManager.acceptCall()
-        // 隐藏接听/拒绝按钮，显示控制按钮
         acceptCallButton.isHidden = true
         rejectCallButton.isHidden = true
         showControlButtons(true)
@@ -365,45 +330,48 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         dismiss(animated: true)
     }
     
-    /// 显示/隐藏通话控制按钮（静音、挂断等）
     open func showControlButtons(_ show: Bool) {
         controlStackView.isHidden = !show
     }
     
-    // MARK: - 状态更新（子类可重写以自定义 UI）
+    // MARK: - 状态更新
     open func updateUIForState(_ state: CallState) {
         switch state {
         case .calling:
             statusLabel.text = "呼叫中..."
-            durationLabel.text = ""
+            durationLabel.isHidden = true
             showControlButtons(false)
             acceptCallButton.isHidden = true
             rejectCallButton.isHidden = true
         case .incoming:
             statusLabel.text = "来电..."
-            durationLabel.text = ""
+            durationLabel.isHidden = true
             showControlButtons(false)
             acceptCallButton.isHidden = false
             rejectCallButton.isHidden = false
         case .connecting:
             statusLabel.text = "连接中..."
-            durationLabel.text = ""
+            durationLabel.isHidden = true
             showControlButtons(false)
         case .connected:
             statusLabel.text = "通话中"
+            durationLabel.isHidden = false
             showControlButtons(true)
             acceptCallButton.isHidden = true
             rejectCallButton.isHidden = true
         case .reconnecting:
             statusLabel.text = "重连中..."
+            durationLabel.isHidden = false
         case .disconnected, .failed:
             statusLabel.text = state == .disconnected ? "通话结束" : "通话失败"
+            durationLabel.isHidden = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 self?.dismiss(animated: true)
             }
         default:
             break
         }
+        minimizeButton.isHidden = (state != .connected)
     }
     
     open func updateDuration(_ duration: TimeInterval) {
@@ -413,102 +381,53 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     // MARK: - CallUIDelegate
-    
     public func callStateDidChange(_ state: CallState) {
-        DispatchQueue.main.async {
-            self.updateUIForState(state)
-        }
+        DispatchQueue.main.async { self.updateUIForState(state) }
     }
     
     open func didConnect(withUser user: CallUser) {
-        // 子类可重写
-        // 视频通话连接后，初始化画中画
-        if callType == .video {
-            initPictureInPicture()
-        }
+        if callType == .video { initPictureInPicture() }
     }
     
     open func didDisconnect(error: Error?) {
-        // 子类可重写
-        // 通话结束时清理 PiP（防止通话结束后进后台还触发 PiP）
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            IncomingCallManager.shared.hide()
+            self.statusLabel.text = error == nil ? "通话结束" : "通话失败"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.dismiss(animated: true) }
+        }
         if callType == .video {
             callManager.engine.stopPiPCapturer()
             PictureInPictureManager.shared.endCall()
         }
-//        DispatchQueue.main.async { [weak self] in
-//            guard let self = self else { return }
-//            // 更新状态文字
-//            self.statusLabel.text = error == nil ? "通话结束" : "通话失败"
-//            // 延迟关闭页面（避免突兀）
-//            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-//                self.dismiss(animated: true)
-//            }
-//        }
     }
     
-    open func remoteUserDidJoin(_ user: CallUser) {
-        DispatchQueue.main.async {
-            // 子类可重写，例如设置远端视频
-        }
-    }
-    
-    open func remoteUserDidLeave(_ user: CallUser) {
-        DispatchQueue.main.async {
-            // 子类可重写
-        }
-    }
+    open func remoteUserDidJoin(_ user: CallUser) { }
+    open func remoteUserDidLeave(_ user: CallUser) { }
     
     public func didUpdateDuration(_ duration: TimeInterval) {
-        DispatchQueue.main.async {
-            self.updateDuration(duration)
-        }
+        DispatchQueue.main.async { self.updateDuration(duration) }
     }
     
     public func didReceiveIncomingCall(from user: CallUser, callType: CallType, channelName: String, token: String) {
-        // 基类已经处理了状态，子类可以进一步定制
-        DispatchQueue.main.async {
-            self.updateUIForState(.incoming)
-        }
+        DispatchQueue.main.async { self.updateUIForState(.incoming) }
     }
     
     public func didOccurError(_ error: Error) {
         DispatchQueue.main.async {
             let alert = UIAlertController(title: "通话错误", message: error.localizedDescription, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "确定", style: .default) { _ in
-                self.dismiss(animated: true)
-            })
+            alert.addAction(UIAlertAction(title: "确定", style: .default) { _ in self.dismiss(animated: true) })
             self.present(alert, animated: true)
         }
     }
     
-    // MARK: - FloatingWindowCompatible (悬浮窗支持)
-    
-    public var floatingWindowTitle: String {
-        return remoteUser?.name ?? "通话中"
-    }
-    
-    public var floatingWindowSubtitle: String? {
-        return nil
-    }
-    
-    public var isVideoCall: Bool {
-        return callType == .video
-    }
-    
-    public func getFloatingWindowVideoView() -> UIView? {
-        return nil // 子类重写返回本地视频视图
-    }
-    
-    public func restoreFromFloatingWindow(_ videoView: UIView?) {
-        // 子类重写，将视频视图放回本地视图
-    }
-    
-    public func endCallFromFloatingWindow() {
-        callManager.hangUp()
-    }
-    
-    public func getCurrentCallDuration() -> TimeInterval {
-        return callManager.getCurrentDuration()
-    }
+    // MARK: - FloatingWindowCompatible 默认实现
+    public var floatingWindowTitle: String { remoteUser?.name ?? "通话中" }
+    public var floatingWindowSubtitle: String? { nil }
+    public var isVideoCall: Bool { callType == .video }
+    open func getFloatingWindowVideoView() -> UIView? { nil }
+    open func bindRemoteVideoToFloatingView(_ view: UIView) { }
+    open func restoreFromFloatingWindow(_ videoView: UIView?) { }
+    open func endCallFromFloatingWindow() { callManager.hangUp() }
+    open func getCurrentCallDuration() -> TimeInterval { callManager.getCurrentDuration() }
 }
-

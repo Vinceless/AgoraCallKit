@@ -29,6 +29,7 @@ public protocol AgoraEngineDelegate: AnyObject {
     func engine(_ engine: AgoraEngineManager, connectionStateChanged state: AgoraConnectionState)
 }
 
+/// 声网引擎管理器，封装 AgoraRtcEngineKit 的常用操作
 public class AgoraEngineManager: NSObject {
     public static let shared = AgoraEngineManager()
     public weak var delegate: AgoraEngineDelegate?
@@ -46,6 +47,8 @@ public class AgoraEngineManager: NSObject {
     }
     
     // MARK: - 配置
+    /// 配置声网引擎，应在 App 启动时调用
+    /// - Parameter appId: 声网 App ID
     public func configure(appId: String) {
         self.appId = appId
         let config = AgoraRtcEngineConfig()
@@ -53,24 +56,23 @@ public class AgoraEngineManager: NSObject {
         config.areaCode = .global
         engine = AgoraRtcEngineKit.sharedEngine(with: config, delegate: self)
         engine?.setChannelProfile(.communication)
-        // 基础配置：开启音频，视频默认关闭
         engine?.enableAudio()
         engine?.enableVideo()
-        engine?.disableVideo() // 初始关闭视频，在需要视频时再开启
+        engine?.disableVideo() // 初始关闭视频，需要时再开启
         setupAudioSession()
         
         // 设置视频编码配置
-            let videoConfig = AgoraVideoEncoderConfiguration(size: CGSize(width: 640, height: 480),
-                                                              frameRate: 15,
-                                                              bitrate: 400,
-                                                              orientationMode: .fixedPortrait,
-                                                              mirrorMode: .auto)
-            engine?.setVideoEncoderConfiguration(videoConfig)
-        // 注意：不要在 configure 中设置视频帧代理！
-        // PiP 视频帧代理在通话连接后通过 startPiPCapturer 启动
+        let videoConfig = AgoraVideoEncoderConfiguration(
+            size: CGSize(width: 640, height: 480),
+            frameRate: 15,
+            bitrate: 400,
+            orientationMode: .fixedPortrait,
+            mirrorMode: .auto
+        )
+        engine?.setVideoEncoderConfiguration(videoConfig)
     }
     
-    // 在清理时移除 PiP 采集器
+    /// 销毁引擎，释放资源
     public func destroy() {
         stopPiPCapturer()
         engine?.leaveChannel()
@@ -78,6 +80,7 @@ public class AgoraEngineManager: NSObject {
         engine = nil
     }
     
+    /// 配置音频会话，支持蓝牙和扬声器
     private func setupAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
@@ -89,11 +92,16 @@ public class AgoraEngineManager: NSObject {
     }
     
     // MARK: - 频道管理
+    /// 加入频道
+    /// - Parameters:
+    ///   - channel: 频道名
+    ///   - token: 声网 Token（可选）
+    ///   - uid: 用户ID
+    ///   - isVideoCall: 是否为视频通话
+    /// - Returns: 是否成功发起加入请求
     @discardableResult
     public func joinChannel(_ channel: String, token: String?, uid: UInt, isVideoCall: Bool) -> Bool {
         guard let engine = engine else { return false }
-        
-        print("[AgoraEngine] joinChannel: channel=\(channel), uid=\(uid), isVideoCall=\(isVideoCall)")
         
         if isVideoCall {
             engine.enableVideo()
@@ -108,7 +116,6 @@ public class AgoraEngineManager: NSObject {
         option.channelProfile = .communication
         
         let result = engine.joinChannel(byToken: token, channelId: channel, uid: uid, mediaOptions: option)
-        print("[AgoraEngine] joinChannel result: \(result)")
         if result == 0 {
             currentChannel = channel
             return true
@@ -116,9 +123,8 @@ public class AgoraEngineManager: NSObject {
         return false
     }
     
-    /// 开始本地视频预览（在 enableVideo 和 setupLocalVideo 之后调用）
+    /// 开始本地视频预览
     public func startPreview() {
-        print("[AgoraEngine] startPreview called, isVideoEnabled=\(isVideoEnabled)")
         engine?.startPreview()
     }
     
@@ -127,22 +133,21 @@ public class AgoraEngineManager: NSObject {
         engine?.stopPreview()
     }
     
+    /// 离开当前频道
     public func leaveChannel() {
-        // 离开频道时停止 PiP 采集器
         stopPiPCapturer()
         engine?.leaveChannel()
         currentChannel = nil
     }
     
     // MARK: - PiP 视频帧代理
-    /// 启动 PiP 视频帧代理（通过 AgoraVideoFrameDelegate 获取视频帧）
-    /// processMode = .readOnly，不修改帧数据，不干扰 Agora 内部渲染管线
+    /// 启动 PiP 视频帧代理，通过 AgoraVideoFrameDelegate 获取视频帧
+    /// - Parameter remoteVideoView: 远端视频渲染视图（用于尺寸参考）
     public func startPiPCapturer(remoteVideoView: UIView?) {
         guard pipVideoFrameDelegate == nil else { return }
         let delegate = PIPVideoFrameDelegate(pipManager: PictureInPictureManager.shared)
         engine?.setVideoFrameDelegate(delegate)
         pipVideoFrameDelegate = delegate
-        print("[AgoraEngine] PiP video frame delegate started")
     }
     
     /// 停止 PiP 视频帧代理
@@ -150,13 +155,13 @@ public class AgoraEngineManager: NSObject {
         if pipVideoFrameDelegate != nil {
             engine?.setVideoFrameDelegate(nil)
             pipVideoFrameDelegate = nil
-            print("[AgoraEngine] PiP video frame delegate stopped")
         }
     }
     
     // MARK: - 本地视频渲染
+    /// 设置本地视频渲染视图
+    /// - Parameter view: 用于渲染的 UIView
     public func setupLocalVideoView(_ view: UIView) {
-        print("[AgoraEngine] setupLocalVideoView: view=\(view), bounds=\(view.bounds), window=\(view.window != nil)")
         let canvas = AgoraRtcVideoCanvas()
         canvas.view = view
         canvas.renderMode = .hidden
@@ -164,6 +169,10 @@ public class AgoraEngineManager: NSObject {
         engine?.setupLocalVideo(canvas)
     }
     
+    /// 设置远端视频渲染视图
+    /// - Parameters:
+    ///   - view: 用于渲染的 UIView
+    ///   - uid: 远端用户ID
     public func setupRemoteVideoView(_ view: UIView, forUid uid: UInt) {
         let canvas = AgoraRtcVideoCanvas()
         canvas.view = view
@@ -172,6 +181,8 @@ public class AgoraEngineManager: NSObject {
         engine?.setupRemoteVideo(canvas)
     }
     
+    /// 移除远端视频渲染视图
+    /// - Parameter uid: 远端用户ID
     public func removeRemoteVideoView(forUid uid: UInt) {
         let canvas = AgoraRtcVideoCanvas()
         canvas.view = nil
@@ -180,28 +191,34 @@ public class AgoraEngineManager: NSObject {
     }
     
     // MARK: - 音视频控制
+    /// 静音/取消静音本地音频
     public func muteLocalAudio(_ mute: Bool) {
         engine?.muteLocalAudioStream(mute)
     }
     
+    /// 静音/取消静音本地视频
     public func muteLocalVideo(_ mute: Bool) {
         engine?.muteLocalVideoStream(mute)
         delegate?.engine(self, localVideoMuted: mute)
     }
     
+    /// 开启/关闭扬声器
     public func setSpeakerEnabled(_ enabled: Bool) {
         engine?.setEnableSpeakerphone(enabled)
     }
     
+    /// 切换前后摄像头
     public func switchCamera() {
         engine?.switchCamera()
     }
     
     // MARK: - 工具
+    /// 获取当前频道名
     public func getCurrentChannel() -> String? {
         return currentChannel
     }
     
+    /// 是否已在频道中
     public func isInChannel() -> Bool {
         return currentChannel != nil
     }

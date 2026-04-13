@@ -7,42 +7,57 @@
 
 import UIKit
 
-/// 悬浮窗兼容协议，通话页面可实现该协议以支持悬浮窗
+// MARK: - 悬浮窗兼容协议
+/// 通话页面需实现此协议以支持悬浮窗功能
 public protocol FloatingWindowCompatible: UIViewController {
+    /// 悬浮窗标题
     var floatingWindowTitle: String { get }
+    /// 悬浮窗副标题（可选）
     var floatingWindowSubtitle: String? { get }
+    /// 是否为视频通话
     var isVideoCall: Bool { get }
+    /// 返回一个用于悬浮窗展示的新视图（由调用方创建并绑定视频）
     func getFloatingWindowVideoView() -> UIView?
+    /// 将远端视频绑定到指定视图上
+    func bindRemoteVideoToFloatingView(_ view: UIView)
+    /// 从悬浮窗恢复时调用，将视频视图归还原位
     func restoreFromFloatingWindow(_ videoView: UIView?)
+    /// 悬浮窗结束通话
     func endCallFromFloatingWindow()
+    /// 获取当前通话时长（秒）
     func getCurrentCallDuration() -> TimeInterval
 }
 
 public extension FloatingWindowCompatible {
-    var floatingWindowSubtitle: String? { return nil }
+    var floatingWindowSubtitle: String? { nil }
     func floatingWindowWillAppear() {}
     func floatingWindowDidDisappear() {}
     func floatingWindowDidTap() {}
 }
 
-/// 悬浮窗管理器
+// MARK: - 悬浮窗管理器
+/// 负责悬浮窗的显示、隐藏和恢复
 public class FloatingWindowManager {
     public static let shared = FloatingWindowManager()
     
     private var floatingWindow: FloatingCallWindow?
     private weak var currentViewController: FloatingWindowCompatible?
     
+    /// 显示悬浮窗
+    /// - Parameter viewController: 当前通话控制器（需遵循 FloatingWindowCompatible）
     public func showFloatingWindow(from viewController: FloatingWindowCompatible) {
         if let existing = floatingWindow {
             existing.hide()
         }
         currentViewController = viewController
         floatingWindow = FloatingCallWindow()
+        _ = floatingWindow?.view  // 强制加载视图，避免 configure 时控件为 nil
         floatingWindow?.configure(with: viewController)
         floatingWindow?.show()
         viewController.floatingWindowWillAppear()
     }
     
+    /// 隐藏悬浮窗
     public func hideFloatingWindow() {
         currentViewController?.floatingWindowDidDisappear()
         floatingWindow?.hide()
@@ -50,6 +65,9 @@ public class FloatingWindowManager {
         currentViewController = nil
     }
     
+    /// 从悬浮窗恢复到全屏
+    /// - Returns: 恢复的通话控制器
+    @discardableResult
     public func restoreFromFloatingWindow() -> FloatingWindowCompatible? {
         guard let window = floatingWindow, let vc = currentViewController else { return nil }
         let restored = window.restoreToFullscreen()
@@ -57,12 +75,14 @@ public class FloatingWindowManager {
         return restored
     }
     
+    /// 悬浮窗是否正在显示
     public func isShowing() -> Bool {
-        return floatingWindow != nil
+        floatingWindow != nil
     }
 }
 
-/// 悬浮窗视图控制器
+// MARK: - 悬浮窗视图控制器
+/// 悬浮窗具体实现，支持拖拽、点击恢复、关闭通话
 class FloatingCallWindow: UIViewController {
     private var containerView: UIView!
     private var contentView: UIView!
@@ -85,12 +105,16 @@ class FloatingCallWindow: UIViewController {
         setupUI()
         setupGestures()
         startDurationTimer()
+        // 隐藏按钮，点击窗口直接恢复全屏
+        minimizeButton.isHidden = true
+        closeButton.isHidden = true
     }
     
     deinit {
         durationTimer?.invalidate()
     }
     
+    /// 配置悬浮窗内容
     func configure(with viewController: FloatingWindowCompatible) {
         originalViewController = viewController
         isVideoMode = viewController.isVideoCall
@@ -98,8 +122,11 @@ class FloatingCallWindow: UIViewController {
         subtitleLabel.text = viewController.floatingWindowSubtitle
         typeIcon.image = UIImage(systemName: viewController.isVideoCall ? "video.fill" : "phone.fill")
         typeIcon.tintColor = .white
-        if viewController.isVideoCall, let videoViewContent = viewController.getFloatingWindowVideoView() {
-            setupVideoContent(videoViewContent)
+        
+        if viewController.isVideoCall,
+           let floatingVideoView = viewController.getFloatingWindowVideoView() {
+            setupVideoContent(floatingVideoView)
+            viewController.bindRemoteVideoToFloatingView(floatingVideoView)
             audioView.isHidden = true
             videoView.isHidden = false
         } else {
@@ -182,7 +209,7 @@ class FloatingCallWindow: UIViewController {
         closeButton.addTarget(self, action: #selector(closeCall), for: .touchUpInside)
         containerView.addSubview(closeButton)
         
-        // 布局
+        // 布局约束
         containerView.translatesAutoresizingMaskIntoConstraints = false
         contentView.translatesAutoresizingMaskIntoConstraints = false
         videoView.translatesAutoresizingMaskIntoConstraints = false
@@ -242,7 +269,7 @@ class FloatingCallWindow: UIViewController {
             closeButton.heightAnchor.constraint(equalToConstant: 24)
         ])
         
-        typeIcon.isHidden = true // 隐藏默认图标，使用按钮替代
+        typeIcon.isHidden = true
     }
     
     private func setupVideoContent(_ video: UIView) {
@@ -279,7 +306,7 @@ class FloatingCallWindow: UIViewController {
     private func setupGestures() {
         panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         containerView.addGestureRecognizer(panGesture!)
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        let tap = UITapGestureRecognizer(target: self, action: #selector(restoreToFullscreenView))
         containerView.addGestureRecognizer(tap)
     }
     
@@ -324,10 +351,6 @@ class FloatingCallWindow: UIViewController {
         }
     }
     
-    @objc private func handleTap() {
-        originalViewController?.floatingWindowDidTap()
-    }
-    
     @objc func restoreToFullscreenView() {
         _ = restoreToFullscreen()
     }
@@ -335,12 +358,9 @@ class FloatingCallWindow: UIViewController {
     @discardableResult
     func restoreToFullscreen() -> FloatingWindowCompatible? {
         guard let vc = originalViewController else { return nil }
-        var videoSubview: UIView?
-        if vc.isVideoCall {
-            videoSubview = videoView.subviews.first
-        }
-        vc.restoreFromFloatingWindow(videoSubview)
+        vc.restoreFromFloatingWindow(nil)
         hide()
+        NotificationCenter.default.post(name: .needRestoreFloatingWindow, object: vc)
         return vc
     }
     
@@ -362,4 +382,10 @@ class FloatingCallWindow: UIViewController {
         let seconds = Int(duration) % 60
         durationLabel.text = String(format: "%02d:%02d", minutes, seconds)
     }
+}
+
+// MARK: - 通知扩展
+public extension Notification.Name {
+    /// 需要从悬浮窗恢复全屏的通知
+    static let needRestoreFloatingWindow = Notification.Name("needRestoreFloatingWindow")
 }

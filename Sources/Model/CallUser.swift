@@ -7,23 +7,9 @@
 
 import Foundation
 
-// MARK: - 用户信息结构体
-
-public struct AgoraUser {
-    public let uid: UInt
-    public var isAudioMuted: Bool = false
-    public var isVideoMuted: Bool = false
-    public var videoView: UIView?
-    public var isLocal: Bool = false
-    
-    public init(uid: UInt, isLocal: Bool = false) {
-        self.uid = uid
-        self.isLocal = isLocal
-    }
-}
-
 // MARK: - 用户信息
 
+/// 通话中的用户信息
 public struct CallUser {
     public let uid: UInt
     public let name: String
@@ -32,6 +18,12 @@ public struct CallUser {
     public var isVideoMuted: Bool = false
     public var isLocal: Bool = false
     
+    /// 初始化用户
+    /// - Parameters:
+    ///   - uid: 声网用户ID
+    ///   - name: 用户昵称
+    ///   - avatar: 头像URL（可选）
+    ///   - isLocal: 是否为本地用户
     public init(uid: UInt, name: String, avatar: String = "", isLocal: Bool = false) {
         self.uid = uid
         self.name = name

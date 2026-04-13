@@ -2,7 +2,7 @@
 //  PictureInPictureManager.swift
 //  AgoraCallCore
 //
-//  Created by Vnce on 2021/12/2.
+//  Created by Vince on 2021/12/2.
 //
 
 import UIKit
@@ -11,6 +11,7 @@ import CoreMedia
 import CoreVideo
 import AgoraRtcKit
 
+/// 画中画管理器，负责接收视频帧并通过 AVSampleBufferDisplayLayer 渲染到画中画
 public class PictureInPictureManager: NSObject {
     static let shared = PictureInPictureManager()
     
@@ -18,59 +19,45 @@ public class PictureInPictureManager: NSObject {
     private var sampleBufferDisplayLayer: AVSampleBufferDisplayLayer?
     private var videoSize: CGSize = .zero
     
-    // PiP 渲染视图（放在屏幕外，Agora 远端视频的第二个渲染目标）
+    /// 画中画渲染视图（放在屏幕外，Agora 远端视频的第二个渲染目标）
     private var pipRenderView: UIView?
     
-    // 是否正在播放（用于 AVPictureInPictureSampleBufferPlaybackDelegate）
     private var isPlaying: Bool = true
-    
-    // 上一帧的时间戳（确保递增）
     private var lastEnqueuedTimestamp: CMTime = .zero
-    
-    // 是否已经初始化
     private var isSetup: Bool = false
-    
-    // 是否正在通话中（用于控制 PiP 自动启动）
     private var isInCall: Bool = false
+    private var hasEnqueuedFrames: Bool = false
     
     private override init() {}
     
     /// 初始化画中画视图
-    /// - Parameter initialSize: 视频尺寸
+    /// - Parameter initialSize: 视频尺寸（通常从远端视频视图获取）
     func setup(initialSize: CGSize) {
         videoSize = initialSize
         isInCall = true
         
-        // 先清理旧的
         cleanup()
         
-        // 尺寸不能为零
         let safeSize = initialSize.width > 0 && initialSize.height > 0 ? initialSize : CGSize(width: 360, height: 640)
         
-        // 创建 AVSampleBufferDisplayLayer 用于渲染视频帧
         let displayLayer = AVSampleBufferDisplayLayer()
         displayLayer.videoGravity = .resizeAspect
         displayLayer.frame = CGRect(origin: .zero, size: safeSize)
         self.sampleBufferDisplayLayer = displayLayer
         
-        // 创建一个 view 来持有 displayLayer，并将其添加到当前 key window 上
-        // 重要：view 必须在 window 层级中且 frame 在 window bounds 内，
-        // 否则 AVPictureInPictureController 无法识别为 inline 内容
         let renderView = UIView(frame: CGRect(origin: .zero, size: safeSize))
         renderView.layer.addSublayer(displayLayer)
         renderView.isUserInteractionEnabled = false
         renderView.backgroundColor = .clear
-        renderView.alpha = 0.01  // 几乎不可见但系统认为可见，PiP 需要这个
+        renderView.alpha = 0.01  // 几乎不可见但系统认为可见，PiP 需要
         pipRenderView = renderView
         
-        // 将 renderView 添加到 key window
         if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
             window.addSubview(renderView)
         } else if let window = UIApplication.shared.windows.first {
             window.addSubview(renderView)
         }
         
-        // 创建画中画控制器
         if AVPictureInPictureController.isPictureInPictureSupported() {
             if #available(iOS 15.0, *) {
                 let contentSource = AVPictureInPictureController.ContentSource(
@@ -90,10 +77,9 @@ public class PictureInPictureManager: NSObject {
         }
     }
     
-    /// 通话结束，清理画中画（防止通话结束后还进入 PiP）
+    /// 通话结束，清理画中画
     func endCall() {
         isInCall = false
-        // 如果 PiP 正在运行，先停止
         if pipController?.isPictureInPictureActive == true {
             pipController?.stopPictureInPicture()
         }
@@ -111,17 +97,13 @@ public class PictureInPictureManager: NSObject {
             pipController?.startPictureInPicture()
             print("[PiP] startPictureInPicture called")
         } else {
-            print("[PiP] Cannot start: isPictureInPicturePossible=false, hasEnqueuedFrames=\(hasEnqueuedFrames)")
-            // 如果还没有帧数据，延迟重试
+            print("[PiP] Cannot start: isPictureInPicturePossible=false")
             if hasEnqueuedFrames {
-                // 有帧但 pip 不可用，可能是 layer 状态问题
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self, self.isInCall else { return }
                     if self.pipController?.isPictureInPicturePossible == true {
                         self.pipController?.startPictureInPicture()
                         print("[PiP] Retry: startPictureInPicture called")
-                    } else {
-                        print("[PiP] Retry failed: isPictureInPicturePossible still false")
                     }
                 }
             }
@@ -144,14 +126,10 @@ public class PictureInPictureManager: NSObject {
         lastEnqueuedTimestamp = .zero
     }
     
-    /// 是否已有帧入队（PiP 需要 layer 中有内容才能启动）
-    private var hasEnqueuedFrames: Bool = false
-    
     /// 接收视频帧（由 AgoraVideoFrameDelegate 回调送入）
     func enqueueVideoFrame(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard let displayLayer = sampleBufferDisplayLayer else { return }
         
-        // 确保时间戳递增
         let safeTimestamp: CMTime
         if timestamp <= lastEnqueuedTimestamp {
             safeTimestamp = CMTimeAdd(lastEnqueuedTimestamp, CMTime(value: 1, timescale: 30))
@@ -192,7 +170,7 @@ public class PictureInPictureManager: NSObject {
             displayLayer.enqueue(buffer)
             if !hasEnqueuedFrames {
                 hasEnqueuedFrames = true
-                print("[PiP] First frame enqueued, pipPossible=\(pipController?.isPictureInPicturePossible ?? false)")
+                print("[PiP] First frame enqueued")
             }
         }
     }
@@ -200,7 +178,6 @@ public class PictureInPictureManager: NSObject {
 
 // MARK: - AVPictureInPictureControllerDelegate
 extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
-    
     public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         print("[PiP] Will start")
         NotificationCenter.default.post(name: .pipWillStart, object: nil)
@@ -232,7 +209,6 @@ extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
 // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate (iOS 15+)
 @available(iOS 15.0, *)
 extension PictureInPictureManager: AVPictureInPictureSampleBufferPlaybackDelegate {
-    
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
         isPlaying = playing
     }
@@ -245,16 +221,15 @@ extension PictureInPictureManager: AVPictureInPictureSampleBufferPlaybackDelegat
         return !isPlaying
     }
     
-    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {
-    }
+    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) { }
     
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
         completionHandler()
     }
 }
 
+// MARK: - 通知名称扩展
 extension Notification.Name {
     static let pipWillStart = Notification.Name("pipWillStart")
     static let pipDidStop = Notification.Name("pipDidStop")
-    static let needRestoreFloatingWindow = Notification.Name("needRestoreFloatingWindow")
 }

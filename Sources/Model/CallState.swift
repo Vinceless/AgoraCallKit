@@ -10,7 +10,7 @@ import Foundation
 // MARK: - 通话状态枚举
 
 public enum CallState: Equatable {
-    case idle              // 空闲
+    case idle              // 空闲，无通话
     case calling           // 正在呼叫（主叫等待接听）
     case incoming          // 收到来电（被叫等待选择）
     case connecting        // 连接中（加入频道）

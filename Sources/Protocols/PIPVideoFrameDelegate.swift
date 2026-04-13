@@ -1,6 +1,6 @@
 //
 //  PIPVideoFrameDelegate.swift
-//  AgoraCallKit
+//  AgoraCallCore
 //
 //  Created by CallCore on 2021/12/2.
 //
@@ -10,20 +10,14 @@ import CoreMedia
 import CoreVideo
 import AgoraRtcKit
 
-/// PiP 视频帧代理
-/// 使用 AgoraVideoFrameDelegate 的 onRenderVideoFrame 获取远端视频帧
-/// processMode = .readOnly，不修改帧数据，不干扰 Agora 内部渲染管线
-/// 观察位置 = .preRenderer，在远端视频帧渲染前获取
+/// PiP 视频帧代理，实现 AgoraVideoFrameDelegate，获取远端视频帧并送入 PictureInPictureManager
 public class PIPVideoFrameDelegate: NSObject, AgoraVideoFrameDelegate {
     
     weak var pipManager: PictureInPictureManager?
     
-    // 帧计数（用于生成递增时间戳）
     private var frameCount: Int64 = 0
-    
-    // 上一次送帧时间（节流，避免送帧频率过高）
     private var lastEnqueueTime: CFTimeInterval = 0
-    private let enqueueInterval: CFTimeInterval = 1.0 / 15.0  // 15fps
+    private let enqueueInterval: CFTimeInterval = 1.0 / 15.0  // 15fps 节流
     
     init(pipManager: PictureInPictureManager?) {
         self.pipManager = pipManager
@@ -63,12 +57,6 @@ public class PIPVideoFrameDelegate: NSObject, AgoraVideoFrameDelegate {
     }
     
     // 以下回调不需要实现，但协议要求声明
-    
-    public func onCapture(_ videoFrame: AgoraOutputVideoFrame, sourceType: AgoraVideoSourceType) -> Bool {
-        return true
-    }
-    
-    public func onPreEncode(_ videoFrame: AgoraOutputVideoFrame, sourceType: AgoraVideoSourceType) -> Bool {
-        return true
-    }
+    public func onCapture(_ videoFrame: AgoraOutputVideoFrame, sourceType: AgoraVideoSourceType) -> Bool { return true }
+    public func onPreEncode(_ videoFrame: AgoraOutputVideoFrame, sourceType: AgoraVideoSourceType) -> Bool { return true }
 }

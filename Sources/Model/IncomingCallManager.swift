@@ -1,13 +1,13 @@
 //
 //  IncomingCallManager.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by CallCore on 2026/4/7.
 //
 
 import UIKit
 
-/// 来电弹窗管理器
+/// 来电弹窗管理器，负责全局显示和隐藏来电弹窗
 public class IncomingCallManager {
     
     public static let shared = IncomingCallManager()

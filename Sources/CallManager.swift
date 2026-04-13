@@ -8,6 +8,7 @@
 import Foundation
 import AgoraRtcKit
 
+/// 通话核心管理器，负责信令交互、状态管理、音视频控制
 public class CallManager {
     
     public static let shared = CallManager()
@@ -19,19 +20,18 @@ public class CallManager {
     public var uiDelegate: CallUIDelegate?
     public let engine = AgoraEngineManager.shared
     
-    // MARK: - 内部组件
-    
+    // MARK: - 内部状态
     public private(set) var isCaller: Bool = false
     
     public var currentState: CallState = .idle {
         didSet {
             DispatchQueue.main.async { [weak self] in
-                self?.uiDelegate?.callStateDidChange(self?.currentState ?? .idle)
+                guard let self = self else { return }
+                self.uiDelegate?.callStateDidChange(self.currentState)
             }
         }
     }
     
-    // 当前通话信息
     private var currentCallType: CallType?
     private var currentChannel: String?
     private var currentToken: String?
@@ -53,9 +53,14 @@ public class CallManager {
         signalDelegate?.setListener(signalListener)
     }
     
-    // MARK: - 公共方法
+    // MARK: - 公共方法 - 发起通话
     
     /// 发起单聊通话
+    /// - Parameters:
+    ///   - user: 被叫用户信息
+    ///   - channelName: 频道名
+    ///   - callType: 通话类型
+    ///   - completion: 完成回调
     public func startCall(to user: CallUser, channelName: String, callType: CallType, completion: ((Result<Void, Error>) -> Void)? = nil) {
         guard currentState == .idle else {
             failWithError("已有通话进行中", completion: completion)
@@ -74,28 +79,33 @@ public class CallManager {
         }
         
         tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
+            guard let self = self else { return }
             switch result {
             case .success(let token):
-                self?.currentToken = token
-                let success = self?.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video) ?? false
+                self.currentToken = token
+                let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if !success {
-                    self?.failWithError("加入频道失败", completion: completion)
+                    self.failWithError("加入频道失败", completion: completion)
                     return
                 }
-                self?.signalDelegate?.sendCallRequest(toUserId: "\(user.uid)", channelName: channelName, token: token, callType: callType) { result in
+                self.signalDelegate?.sendCallRequest(toUserId: "\(user.uid)", channelName: channelName, token: token, callType: callType) { result in
                     if case .failure(let error) = result {
-                        self?.failWithError(error.localizedDescription, completion: completion)
+                        self.failWithError(error.localizedDescription, completion: completion)
                     } else {
                         completion?(.success(()))
                     }
                 }
             case .failure(let error):
-                self?.failWithError(error.localizedDescription, completion: completion)
+                self.failWithError(error.localizedDescription, completion: completion)
             }
         }
     }
     
     /// 发起群聊通话
+    /// - Parameters:
+    ///   - channelName: 频道名
+    ///   - callType: 通话类型
+    ///   - completion: 完成回调
     public func startGroupCall(channelName: String, callType: CallType, completion: ((Result<Void, Error>) -> Void)? = nil) {
         guard currentState == .idle else {
             completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "已有通话进行中"])))
@@ -113,14 +123,15 @@ public class CallManager {
         }
         
         tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
+            guard let self = self else { return }
             switch result {
             case .success(let token):
-                self?.currentToken = token
-                let success = self?.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video) ?? false
+                self.currentToken = token
+                let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if success {
-                    self?.currentState = .connected
-                    self?.callStartTime = Date()
-                    self?.startDurationTimer()
+                    self.currentState = .connected
+                    self.callStartTime = Date()
+                    self.startDurationTimer()
                     completion?(.success(()))
                 } else {
                     completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
@@ -130,6 +141,8 @@ public class CallManager {
             }
         }
     }
+    
+    // MARK: - 公共方法 - 接听/拒绝/挂断
     
     /// 接听来电（在收到 didReceiveIncomingCall 后调用）
     public func acceptCall() {
@@ -143,19 +156,20 @@ public class CallManager {
         
         isCaller = false
         tokenProvider?.fetchToken(channelName: channel, userId: userId) { [weak self] result in
+            guard let self = self else { return }
             switch result {
             case .success(let token):
-                let success = self?.engine.joinChannel(channel, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video) ?? false
+                let success = self.engine.joinChannel(channel, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if !success {
-                    self?.failWithError("加入频道失败")
+                    self.failWithError("加入频道失败")
                     return
                 }
-                self?.signalDelegate?.sendAcceptResponse(toUserId: "\(remoteUser.uid)") { _ in }
-                self?.currentState = .connected
-                self?.callStartTime = Date()
-                self?.startDurationTimer()
+                self.signalDelegate?.sendAcceptResponse(toUserId: "\(remoteUser.uid)") { _ in }
+                self.currentState = .connected
+                self.callStartTime = Date()
+                self.startDurationTimer()
             case .failure(let error):
-                self?.failWithError(error.localizedDescription)
+                self.failWithError(error.localizedDescription)
             }
         }
     }
@@ -183,7 +197,9 @@ public class CallManager {
         uiDelegate?.didDisconnect(error: nil)
     }
     
-    /// 获取当前通话时长
+    // MARK: - 公共方法 - 状态查询
+    
+    /// 获取当前通话时长（秒）
     public func getCurrentDuration() -> TimeInterval {
         guard let start = callStartTime else { return 0 }
         return Date().timeIntervalSince(start)
@@ -199,51 +215,28 @@ public class CallManager {
         }
     }
     
-    /// 当前通话类型
+    /// 获取当前通话类型
     public var getCurrentCallType: CallType? { currentCallType }
     
-    /// 当前远程用户（单聊）
+    /// 获取当前远程用户（单聊）
     public var getCurrentRemoteUser: CallUser? { currentRemoteUser }
     
     /// 获取群组所有远端用户
     public func getAllRemoteUsers() -> [CallUser] { Array(remoteUsers.values) }
     
-    // MARK: - 音视频控制（转发给引擎）
-    public func muteAudio(_ mute: Bool) {
-        engine.muteLocalAudio(mute)
-    }
-    
-    public func muteVideo(_ mute: Bool) {
-        engine.muteLocalVideo(mute)
-    }
-    
-    public func setSpeakerEnabled(_ enabled: Bool) {
-        engine.setSpeakerEnabled(enabled)
-    }
-    
-    public func switchCamera() {
-        engine.switchCamera()
-    }
-    
-    public func setupLocalVideoView(_ view: UIView) {
-        engine.setupLocalVideoView(view)
-    }
-    
-    public func setupRemoteVideoView(_ view: UIView, forUid uid: UInt) {
-        engine.setupRemoteVideoView(view, forUid: uid)
-    }
-    
-    public func startPreview() {
-        engine.startPreview()
-    }
-    
-    public func stopPreview() {
-        engine.stopPreview()
-    }
+    // MARK: - 公共方法 - 音视频控制（转发给引擎）
+    public func muteAudio(_ mute: Bool) { engine.muteLocalAudio(mute) }
+    public func muteVideo(_ mute: Bool) { engine.muteLocalVideo(mute) }
+    public func setSpeakerEnabled(_ enabled: Bool) { engine.setSpeakerEnabled(enabled) }
+    public func switchCamera() { engine.switchCamera() }
+    public func setupLocalVideoView(_ view: UIView) { engine.setupLocalVideoView(view) }
+    public func setupRemoteVideoView(_ view: UIView, forUid uid: UInt) { engine.setupRemoteVideoView(view, forUid: uid) }
+    public func startPreview() { engine.startPreview() }
+    public func stopPreview() { engine.stopPreview() }
     
     // MARK: - 信令接收（由 App 层信令模块调用）
     
-    /// 收到单聊来电（由 App 层调用）
+    /// 收到单聊来电
     public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType) {
         guard "\(user.uid)" != userProvider?.currentUserId else { return }
         guard currentState == .idle else {
@@ -256,14 +249,8 @@ public class CallManager {
         currentCallType = callType
         currentChannel = channelName
         currentRemoteUser = user
-        uiDelegate?.didReceiveIncomingCall(from: user, callType: callType, channelName: channelName, token: "")
+        uiDelegate?.didReceiveIncomingCall(from: user, callType: callType, channelName: channelName, token: token)
     }
-    
-    /// 收到群聊来电（由 App 层调用）
-//    public func receiveIncomingGroupCall(fromUserId: String, channelName: String, token: String, callType: CallType) {
-        // 群聊来电处理与单聊类似，但可能需要在 UI 中区分
-        //        receiveIncomingCall(fromUserId: fromUserId, channelName: channelName, token: token, callType: callType)
-//    }
     
     /// 对方接受通话
     public func onCallAccepted(fromUserId: String) {
@@ -295,11 +282,6 @@ public class CallManager {
     }
     
     // MARK: - 内部方法
-    private func generateChannelName(for remoteUserId: String) -> String {
-        guard let myId = userProvider?.currentUserId else { return "call_\(remoteUserId)" }
-        let ids = [myId, remoteUserId].sorted()
-        return "call_\(ids[0])_\(ids[1])"
-    }
     
     private func failWithError(_ message: String, completion: ((Result<Void, Error>) -> Void)? = nil) {
         let error = NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
@@ -310,9 +292,9 @@ public class CallManager {
     }
     
     private func resetCall() {
-        currentState = .disconnected  // 先触发 disconnected 状态通知
         stopDurationTimer()
         isCaller = false
+        currentState = .idle
         currentCallType = nil
         currentChannel = nil
         currentRemoteUser = nil
@@ -320,10 +302,6 @@ public class CallManager {
         localUser = nil
         callStartTime = nil
         remoteUsers.removeAll()
-        /// 都处理完再设置为等待
-        DispatchQueue.main.async {
-            self.currentState = .idle
-        }
     }
     
     private func startDurationTimer() {
@@ -333,6 +311,7 @@ public class CallManager {
             let duration = Date().timeIntervalSince(start)
             self.uiDelegate?.didUpdateDuration(duration)
         }
+        RunLoop.main.add(durationTimer!, forMode: .common)
     }
     
     private func stopDurationTimer() {
@@ -341,8 +320,7 @@ public class CallManager {
     }
 }
 
-// MARK: - CallSignalListener 实现
-
+// MARK: - CallSignalListener 实现（内部类）
 private class CallManagerSignalListener: CallSignalListener {
     weak var manager: CallManager?
     
@@ -350,18 +328,10 @@ private class CallManagerSignalListener: CallSignalListener {
         let user = CallUser(uid: 0, name: fromUserId)
         manager?.receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType)
     }
-    func onCallAccepted(fromUserId: String) {
-        manager?.onCallAccepted(fromUserId: fromUserId)
-    }
-    func onCallRejected(fromUserId: String, reason: String?) {
-        manager?.onCallRejected(fromUserId: fromUserId, reason: reason)
-    }
-    func onCallHangup(fromUserId: String) {
-        manager?.onCallHangup(fromUserId: fromUserId)
-    }
-    func onCallCanceled(fromUserId: String) {
-        manager?.onCallCanceled(fromUserId: fromUserId)
-    }
+    func onCallAccepted(fromUserId: String) { manager?.onCallAccepted(fromUserId: fromUserId) }
+    func onCallRejected(fromUserId: String, reason: String?) { manager?.onCallRejected(fromUserId: fromUserId, reason: reason) }
+    func onCallHangup(fromUserId: String) { manager?.onCallHangup(fromUserId: fromUserId) }
+    func onCallCanceled(fromUserId: String) { manager?.onCallCanceled(fromUserId: fromUserId) }
 }
 
 // MARK: - AgoraEngineDelegate
@@ -380,12 +350,9 @@ extension CallManager: AgoraEngineDelegate {
         }
     }
     
-    public func engine(_ engine: AgoraEngineManager, didLeaveChannel channel: String) {
-        // 已经在 hangUp 中重置，这里不需要额外操作
-    }
+    public func engine(_ engine: AgoraEngineManager, didLeaveChannel channel: String) {}
     
     public func engine(_ engine: AgoraEngineManager, didJoinedOfUid uid: UInt) {
-        // 群组通话时，可能会有多个远端用户加入
         if let remoteUser = currentRemoteUser, remoteUser.uid == 0 {
             let updatedUser = CallUser(uid: uid, name: remoteUser.name, avatar: remoteUser.avatar)
             currentRemoteUser = updatedUser
@@ -425,12 +392,10 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, localVideoMuted muted: Bool) {
-        // 可通知 UI 更新本地视频静音图标
         localUser?.isVideoMuted = muted
     }
     
     public func engine(_ engine: AgoraEngineManager, remoteVideoMuted muted: Bool, ofUid uid: UInt) {
-        // 可通知 UI 更新远端视频占位图
         if var user = remoteUsers[uid] {
             user.isVideoMuted = muted
             remoteUsers[uid] = user
@@ -447,8 +412,12 @@ extension CallManager: AgoraEngineDelegate {
                 currentState = .connecting
             }
         case .connected:
-            if currentState == .connecting {
+            if currentState == .connecting || currentState == .calling || currentState == .incoming {
                 currentState = .connected
+            }
+            if callStartTime == nil && currentState == .connected {
+                callStartTime = Date()
+                startDurationTimer()
             }
         case .reconnecting:
             currentState = .reconnecting

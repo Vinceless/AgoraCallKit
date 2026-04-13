@@ -1,6 +1,6 @@
 //
 //  BaseIncomingCallView.swift
-//  CallCore
+//  AgoraCallCore
 //
 //  Created by CallCore on 2026/4/7.
 //
@@ -11,22 +11,22 @@ import UIKit
 public protocol IncomingCallViewDelegate: AnyObject {
     func incomingCallViewDidAccept(_ view: BaseIncomingCallView)
     func incomingCallViewDidReject(_ view: BaseIncomingCallView)
+    func incomingCallViewDidTap(_ view: BaseIncomingCallView)  // 点击空白区域
 }
 
 /// 来电弹窗基类
 open class BaseIncomingCallView: UIView {
     
-    // MARK: - 公共属性
     public weak var delegate: IncomingCallViewDelegate?
     
-    /// 来电用户
+    /// 来电用户信息
     public var callUser: CallUser?
     /// 通话类型
     public var callType: CallType = .voice
-    /// 头像URL（可选）
+    /// 头像URL
     public var avatarURL: URL?
     
-    // MARK: - UI 组件（子类可访问和修改）
+    // MARK: - UI 组件
     public let containerView: UIView = {
         let view = UIView()
         view.backgroundColor = UIColor(white: 0.1, alpha: 0.95)
@@ -83,7 +83,6 @@ open class BaseIncomingCallView: UIView {
         return btn
     }()
     
-    // MARK: - 初始化
     public override init(frame: CGRect) {
         super.init(frame: frame)
         setupUI()
@@ -94,7 +93,6 @@ open class BaseIncomingCallView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
     
-    // MARK: - UI 设置（子类可重写以自定义布局）
     open func setupUI() {
         addSubview(containerView)
         containerView.addSubview(avatarImageView)
@@ -110,7 +108,6 @@ open class BaseIncomingCallView: UIView {
         acceptButton.translatesAutoresizingMaskIntoConstraints = false
         rejectButton.translatesAutoresizingMaskIntoConstraints = false
         
-        // 默认约束：在屏幕顶部，左右留有边距，高度固定
         NSLayoutConstraint.activate([
             containerView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             containerView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
@@ -140,6 +137,10 @@ open class BaseIncomingCallView: UIView {
             rejectButton.widthAnchor.constraint(equalToConstant: 50),
             rejectButton.heightAnchor.constraint(equalToConstant: 50)
         ])
+        
+        // 添加点击手势（点击空白区域弹出全屏界面）
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleContainerTap))
+        containerView.addGestureRecognizer(tapGesture)
     }
     
     open func setupActions() {
@@ -147,7 +148,10 @@ open class BaseIncomingCallView: UIView {
         rejectButton.addTarget(self, action: #selector(rejectTapped), for: .touchUpInside)
     }
     
-    // MARK: - 按钮事件
+    @objc private func handleContainerTap() {
+        delegate?.incomingCallViewDidTap(self)
+    }
+    
     @objc open func acceptTapped() {
         delegate?.incomingCallViewDidAccept(self)
     }
@@ -156,26 +160,22 @@ open class BaseIncomingCallView: UIView {
         delegate?.incomingCallViewDidReject(self)
     }
     
-    // MARK: - 数据更新
     open func configure(with user: CallUser, callType: CallType) {
-            self.callUser = user
-            self.callType = callType
-            nameLabel.text = user.name
-            callTypeLabel.text = callType == .video ? "视频通话" : "语音通话"
-            // 可根据 user.avatar 加载头像
-            if !user.avatar.isEmpty, let url = URL(string: user.avatar) {
-                loadAvatar(from: url)
-            } else {
-                avatarImageView.image = UIImage(systemName: "person.circle.fill")
-            }
+        self.callUser = user
+        self.callType = callType
+        nameLabel.text = user.name
+        callTypeLabel.text = callType == .video ? "视频通话" : "语音通话"
+        if !user.avatar.isEmpty, let url = URL(string: user.avatar) {
+            loadAvatar(from: url)
+        } else {
+            avatarImageView.image = UIImage(systemName: "person.circle.fill")
         }
+    }
     
     open func loadAvatar(from url: URL) {
-        // 默认使用系统头像，子类可重写实现网络加载
         avatarImageView.image = UIImage(systemName: "person.circle.fill")
     }
     
-    // MARK: - 显示与隐藏动画
     open func show(in view: UIView, completion: (() -> Void)? = nil) {
         self.alpha = 0
         self.transform = CGAffineTransform(translationX: 0, y: -88)
@@ -199,7 +199,6 @@ open class BaseIncomingCallView: UIView {
         }
     }
     
-    // 辅助获取安全区域顶部
     private var safeTopAnchor: NSLayoutYAxisAnchor {
         if #available(iOS 11.0, *) {
             return self.safeAreaLayoutGuide.topAnchor
