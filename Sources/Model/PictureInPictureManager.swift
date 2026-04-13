@@ -201,8 +201,14 @@ extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
     }
     
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-        print("[PiP] Restore user interface requested")
-        completionHandler(true)
+        print("[PiP] Restore user interface requested, isInCall=\(isInCall)")
+        if !isInCall {
+            // 通话已结束，不需要恢复界面，直接停止画中画
+            pictureInPictureController.stopPictureInPicture()
+            completionHandler(false)
+        } else {
+            completionHandler(true)
+        }
     }
 }
 

@@ -94,9 +94,6 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     private var isPictureInPictureActive = false
     private var isNotificationsRegistered = false
     
-    // 悬浮窗恢复通知
-    private var isFloatingWindowObserverRegistered = false
-    
     // MARK: - 辅助方法：创建上图下文的圆形按钮（图片 65x65，背景透明）
     private func createActionButton(imageName: String, title: String, tintColor: UIColor = .white) -> UIButton {
         let btn = UIButton(type: .system)
@@ -235,28 +232,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc private func minimizeTapped() {
-        // 注册恢复通知
-        if !isFloatingWindowObserverRegistered {
-            isFloatingWindowObserverRegistered = true
-            NotificationCenter.default.addObserver(self, selector: #selector(restoreFromFloatingWindowNotification), name: .needRestoreFloatingWindow, object: nil)
-        }
         FloatingWindowManager.shared.showFloatingWindow(from: self)
         dismiss(animated: true)
-    }
-    
-    @objc private func restoreFromFloatingWindowNotification(_ notification: Notification) {
-        guard let vc = notification.object as? BaseCallViewController, vc === self else { return }
-        // 重新 present 当前控制器
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            var topVC = rootVC
-            while let presented = topVC.presentedViewController {
-                topVC = presented
-            }
-            topVC.present(self, animated: true) { [weak self] in
-                self?.onRestoredFromFloatingWindow()
-            }
-        }
     }
     
     /// 从悬浮窗恢复后重新绑定视频（子类重写）
@@ -436,12 +413,20 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             IncomingCallManager.shared.hide()
-            self.statusLabel.text = error == nil ? "通话结束" : "通话失败"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.dismiss(animated: true) }
-        }
-        if callType == .video {
-            callManager.engine.stopPiPCapturer()
-            PictureInPictureManager.shared.endCall()
+            // 隐藏悬浮窗
+            if FloatingWindowManager.shared.isShowing() {
+                FloatingWindowManager.shared.hideFloatingWindow()
+            }
+            // 关闭画中画
+            if self.callType == .video {
+                self.callManager.engine.stopPiPCapturer()
+                PictureInPictureManager.shared.endCall()
+            }
+            // 如果当前 VC 仍在显示，显示状态后延迟 dismiss
+            if self.presentingViewController != nil {
+                self.statusLabel.text = error == nil ? "通话结束" : "通话失败"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.dismiss(animated: true) }
+            }
         }
     }
     

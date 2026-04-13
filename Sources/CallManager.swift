@@ -28,6 +28,7 @@ public class CallManager {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.uiDelegate?.callStateDidChange(self.currentState)
+                NotificationCenter.default.post(name: .callStateChanged, object: self.currentState)
             }
         }
     }
@@ -129,9 +130,8 @@ public class CallManager {
                 self.currentToken = token
                 let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if success {
-                    self.currentState = .connected
-                    self.callStartTime = Date()
-                    self.startDurationTimer()
+                    self.currentState = .connecting
+                    // 计时在远端用户加入时开始
                     completion?(.success(()))
                 } else {
                     completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
@@ -165,9 +165,8 @@ public class CallManager {
                     return
                 }
                 self.signalDelegate?.sendAcceptResponse(toUserId: "\(remoteUser.uid)") { _ in }
-                self.currentState = .connected
-                self.callStartTime = Date()
-                self.startDurationTimer()
+                self.currentState = .connecting
+                // 不在这里开始计时，等远端用户加入频道后再计时
             case .failure(let error):
                 self.failWithError(error.localizedDescription)
             }
@@ -255,9 +254,8 @@ public class CallManager {
     /// 对方接受通话
     public func onCallAccepted(fromUserId: String) {
         guard currentState == .calling, currentRemoteUser?.name == fromUserId else { return }
-        currentState = .connected
-        callStartTime = Date()
-        startDurationTimer()
+        currentState = .connecting
+        // 不在这里开始计时，等远端用户加入频道后再计时
     }
     
     /// 对方拒绝通话
@@ -345,16 +343,23 @@ extension CallManager: AgoraEngineDelegate {
             guard let self = self, let localUser = self.localUser else { return }
             self.uiDelegate?.didConnect(withUser: localUser)
         }
+        // 本地加入频道只更新状态，不开始计时
+        // 计时在远端用户加入时开始
         if currentState == .calling || currentState == .incoming {
-            currentState = .connected
-            callStartTime = Date()
-            startDurationTimer()
+            currentState = .connecting
         }
     }
     
     public func engine(_ engine: AgoraEngineManager, didLeaveChannel channel: String) {}
     
     public func engine(_ engine: AgoraEngineManager, didJoinedOfUid uid: UInt) {
+        // 远端用户加入，通话正式开始，开始计时
+        if callStartTime == nil && (currentState == .connecting || currentState == .calling || currentState == .incoming) {
+            currentState = .connected
+            callStartTime = Date()
+            startDurationTimer()
+        }
+        
         if let remoteUser = currentRemoteUser, remoteUser.uid == 0 {
             let updatedUser = CallUser(uid: uid, name: remoteUser.name, avatar: remoteUser.avatar)
             currentRemoteUser = updatedUser
@@ -414,12 +419,9 @@ extension CallManager: AgoraEngineDelegate {
                 currentState = .connecting
             }
         case .connected:
+            // 连接成功但不开始计时，等远端用户加入后才开始
             if currentState == .connecting || currentState == .calling || currentState == .incoming {
-                currentState = .connected
-            }
-            if callStartTime == nil && currentState == .connected {
-                callStartTime = Date()
-                startDurationTimer()
+                currentState = .connecting
             }
         case .reconnecting:
             currentState = .reconnecting

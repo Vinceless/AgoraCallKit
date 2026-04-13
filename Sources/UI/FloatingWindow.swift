@@ -68,11 +68,25 @@ public class FloatingWindowManager {
     /// 从悬浮窗恢复到全屏
     @discardableResult
     public func restoreFromFloatingWindow() -> FloatingWindowCompatible? {
-        guard let window = floatingWindow, let vc = currentViewController else { return nil }
-        let videoView = window.getAndClearVideoView()
-        window.restoreToFullscreen()
+        guard let vc = currentViewController else { return nil }
+        // 直接移除悬浮窗并present
+        floatingWindow?.view.removeFromSuperview()
+        let videoView = floatingWindow?.getAndClearVideoView()
         vc.restoreFromFloatingWindow(videoView)
         hideFloatingWindow()
+        // 重新 present VC
+        DispatchQueue.main.async {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first?.rootViewController {
+                var topVC = rootVC
+                while let presented = topVC.presentedViewController {
+                    topVC = presented
+                }
+                topVC.present(vc, animated: true) {
+                    vc.onRestoredFromFloatingWindow()
+                }
+            }
+        }
         return vc
     }
     
@@ -108,10 +122,34 @@ class FloatingCallWindow: UIViewController {
         setupUI()
         setupGestures()
         startDurationTimer()
+        registerCallStateNotification()
     }
     
     deinit {
         durationTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    /// 监听通话状态变化，通话结束时自动隐藏悬浮窗
+    private func registerCallStateNotification() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCallStateChanged),
+            name: .callStateChanged,
+            object: nil
+        )
+    }
+    
+    @objc private func handleCallStateChanged(_ notification: Notification) {
+        guard let state = notification.object as? CallState else { return }
+        if state == .idle || state == .disconnected {
+            // 通话已结束，隐藏悬浮窗
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.view.removeFromSuperview()
+                FloatingWindowManager.shared.hideFloatingWindow()
+            }
+        }
     }
     
     func configure(with viewController: FloatingWindowCompatible) {
@@ -174,7 +212,7 @@ class FloatingCallWindow: UIViewController {
         
         // 通话时长标签（绿色文字）
         durationLabel = UILabel()
-        durationLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        durationLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .medium)
         durationLabel.textColor = greenColor
         durationLabel.textAlignment = .center
         durationLabel.backgroundColor = .clear
@@ -202,7 +240,7 @@ class FloatingCallWindow: UIViewController {
     }
     
     private func updateLayoutForMode() {
-        let size = isVideoMode ? CGSize(width: 110, height: 200) : CGSize(width: 80, height: 80)
+        let size = isVideoMode ? CGSize(width: 110, height: 200) : CGSize(width: 70, height: 70)
         
         containerView.layer.cornerRadius = 12
         
@@ -242,7 +280,7 @@ class FloatingCallWindow: UIViewController {
             audioView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor).isActive = true
             audioView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor).isActive = true
             
-            let buttonSize: CGFloat = 36
+            let buttonSize: CGFloat = 35
             NSLayoutConstraint.activate([
                 callButton.centerXAnchor.constraint(equalTo: audioView.centerXAnchor),
                 callButton.centerYAnchor.constraint(equalTo: audioView.centerYAnchor, constant: -10),
@@ -345,19 +383,33 @@ class FloatingCallWindow: UIViewController {
     }
     
     @objc private func restoreToFullscreenView() {
-        _ = restoreToFullscreen()
-    }
-    
-    @discardableResult
-    func restoreToFullscreen() -> FloatingWindowCompatible? {
-        guard let vc = originalViewController else { return nil }
-        // 先获取视频视图引用
+        // 如果通话已结束，不恢复全屏，直接隐藏
+        let callState = CallManager.shared.currentState
+        if callState == .idle || callState == .disconnected {
+            view.removeFromSuperview()
+            FloatingWindowManager.shared.hideFloatingWindow()
+            return
+        }
+        guard let vc = originalViewController else { return }
+        // 获取视频视图引用
         let videoView = getAndClearVideoView()
-        hide()
-        // 通知恢复
+        // 立即移除悬浮窗视图
+        view.removeFromSuperview()
+        // 通知 VC 恢复
         vc.restoreFromFloatingWindow(videoView)
-        NotificationCenter.default.post(name: .needRestoreFloatingWindow, object: vc)
-        return vc
+        // 重新 present VC
+        DispatchQueue.main.async {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first?.rootViewController {
+                var topVC = rootVC
+                while let presented = topVC.presentedViewController {
+                    topVC = presented
+                }
+                topVC.present(vc, animated: true) {
+                    vc.onRestoredFromFloatingWindow()
+                }
+            }
+        }
     }
     
     /// 获取并清除视频视图（恢复时调用）
@@ -384,4 +436,5 @@ class FloatingCallWindow: UIViewController {
 // MARK: - 通知扩展
 public extension Notification.Name {
     static let needRestoreFloatingWindow = Notification.Name("needRestoreFloatingWindow")
+    static let callStateChanged = Notification.Name("callStateChanged")
 }
