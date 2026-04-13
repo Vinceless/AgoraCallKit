@@ -180,11 +180,13 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         ])
         
         // 底部控制按钮
+        // controlStackView: 麦克风 扬声器 摄像头（通话中按需显示/隐藏）
         controlStackView.addArrangedSubview(muteAudioButton)
-        controlStackView.addArrangedSubview(endCallButton)
         controlStackView.addArrangedSubview(speakerButton)
         controlStackView.addArrangedSubview(muteVideoButton)
         
+        // callStackView: 挂断 接听 切换摄像头（按状态显示/隐藏）
+        callStackView.addArrangedSubview(endCallButton)
         callStackView.addArrangedSubview(rejectCallButton)
         callStackView.addArrangedSubview(acceptCallButton)
         callStackView.addArrangedSubview(switchCameraButton)
@@ -211,11 +213,14 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             button.setContentHuggingPriority(.required, for: .vertical)
         }
         
-        // 初始隐藏视频相关按钮
+        // 初始隐藏所有按钮，由 updateUIForState 按状态控制显示
+        muteAudioButton.isHidden = true
+        speakerButton.isHidden = true
         muteVideoButton.isHidden = true
-        switchCameraButton.isHidden = true
-        acceptCallButton.isHidden = true
+        endCallButton.isHidden = true
         rejectCallButton.isHidden = true
+        acceptCallButton.isHidden = true
+        switchCameraButton.isHidden = true
         
         // 添加缩小按钮点击事件
         minimizeButton.addTarget(self, action: #selector(minimizeTapped), for: .touchUpInside)
@@ -332,9 +337,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     @objc open func acceptCall() {
         callManager.acceptCall()
-        acceptCallButton.isHidden = true
-        rejectCallButton.isHidden = true
-        showControlButtons(true)
+        // 按钮显示由 updateUIForState(.connected) 统一管理
     }
     
     @objc open func rejectCall() {
@@ -352,31 +355,27 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         case .calling:
             statusLabel.text = "呼叫中..."
             durationLabel.isHidden = true
-            showControlButtons(false)
-            acceptCallButton.isHidden = true
-            rejectCallButton.isHidden = true
+            updateButtonsForState(state)
         case .incoming:
             statusLabel.text = "来电..."
             durationLabel.isHidden = true
-            showControlButtons(false)
-            acceptCallButton.isHidden = false
-            rejectCallButton.isHidden = false
+            updateButtonsForState(state)
         case .connecting:
             statusLabel.text = "连接中..."
             durationLabel.isHidden = true
-            showControlButtons(false)
+            updateButtonsForState(state)
         case .connected:
             statusLabel.text = "通话中"
             durationLabel.isHidden = false
-            showControlButtons(true)
-            acceptCallButton.isHidden = true
-            rejectCallButton.isHidden = true
+            updateButtonsForState(state)
         case .reconnecting:
             statusLabel.text = "重连中..."
             durationLabel.isHidden = false
         case .disconnected, .failed:
             statusLabel.text = state == .disconnected ? "通话结束" : "通话失败"
             durationLabel.isHidden = true
+            controlStackView.isHidden = true
+            callStackView.isHidden = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 self?.dismiss(animated: true)
             }
@@ -384,6 +383,127 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             break
         }
         minimizeButton.isHidden = (state != .connected)
+    }
+    
+    /// 根据通话类型、状态和角色更新按钮布局
+    private func updateButtonsForState(_ state: CallState) {
+        let isVideo = callType == .video
+        
+        if state == .incoming {
+            // 被叫方：来电状态
+            // controlStackView: 麦克风 扬声器 [摄像头(视频)]
+            // callStackView: 挂断 接听
+            muteAudioButton.isHidden = false
+            speakerButton.isHidden = false
+            muteVideoButton.isHidden = !isVideo
+            endCallButton.isHidden = true
+            switchCameraButton.isHidden = true
+            
+            rejectCallButton.isHidden = false
+            acceptCallButton.isHidden = false
+            
+            controlStackView.isHidden = false
+            callStackView.isHidden = false
+        } else if state == .calling {
+            // 主叫方：呼叫中
+            if isVideo {
+                // controlStackView: 麦克风 扬声器 摄像头
+                // callStackView: 取消 切换摄像头
+                muteAudioButton.isHidden = false
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = false
+                endCallButton.isHidden = true
+                switchCameraButton.isHidden = false
+                
+                rejectCallButton.isHidden = false
+                updateButtonTitle(rejectCallButton, isOn: true, onTitle: "取消", offTitle: "取消")
+                acceptCallButton.isHidden = true
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = false
+            } else {
+                // 语音：controlStackView: 麦克风 取消 扬声器
+                // callStackView: 隐藏
+                muteAudioButton.isHidden = false
+                endCallButton.isHidden = false
+                updateButtonTitle(endCallButton, isOn: true, onTitle: "取消", offTitle: "取消")
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = true
+                switchCameraButton.isHidden = true
+                
+                rejectCallButton.isHidden = true
+                acceptCallButton.isHidden = true
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = true
+            }
+        } else if state == .connected {
+            // 接通后
+            if isVideo {
+                // controlStackView: 麦克风 扬声器 摄像头
+                // callStackView: 挂断 切换摄像头
+                muteAudioButton.isHidden = false
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = false
+                endCallButton.isHidden = true
+                switchCameraButton.isHidden = false
+                
+                rejectCallButton.isHidden = false
+                updateButtonTitle(rejectCallButton, isOn: true, onTitle: "挂断", offTitle: "挂断")
+                acceptCallButton.isHidden = true
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = false
+            } else {
+                // 语音：controlStackView: 麦克风 挂断 扬声器
+                // callStackView: 隐藏
+                muteAudioButton.isHidden = false
+                endCallButton.isHidden = false
+                updateButtonTitle(endCallButton, isOn: true, onTitle: "挂断", offTitle: "挂断")
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = true
+                switchCameraButton.isHidden = true
+                
+                rejectCallButton.isHidden = true
+                acceptCallButton.isHidden = true
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = true
+            }
+        } else if state == .connecting {
+            // 连接中：保持呼叫中的按钮布局
+            if isVideo {
+                muteAudioButton.isHidden = false
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = false
+                endCallButton.isHidden = true
+                switchCameraButton.isHidden = false
+                
+                rejectCallButton.isHidden = false
+                updateButtonTitle(rejectCallButton, isOn: true, onTitle: "取消", offTitle: "取消")
+                acceptCallButton.isHidden = true
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = false
+            } else {
+                muteAudioButton.isHidden = false
+                endCallButton.isHidden = false
+                updateButtonTitle(endCallButton, isOn: true, onTitle: "取消", offTitle: "取消")
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = true
+                switchCameraButton.isHidden = true
+                
+                rejectCallButton.isHidden = true
+                acceptCallButton.isHidden = true
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = true
+            }
+        } else {
+            // 其他状态
+            controlStackView.isHidden = true
+            callStackView.isHidden = true
+        }
     }
     
     open func updateDuration(_ duration: TimeInterval) {

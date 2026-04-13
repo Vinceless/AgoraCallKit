@@ -34,10 +34,6 @@ open class SingleAudioCallViewController: BaseCallViewController {
         super.viewDidLoad()
         setupAudioUI()
         setupRemoteUserInfo()
-        
-        // 音频通话不需要视频按钮，隐藏
-        muteVideoButton.isHidden = true
-        switchCameraButton.isHidden = true
     }
     
     private func setupAudioUI() {

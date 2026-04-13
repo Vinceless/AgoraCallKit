@@ -65,8 +65,6 @@ open class GroupVideoCallViewController: BaseCallViewController {
             userCountLabel.heightAnchor.constraint(equalToConstant: 24)
         ])
         
-        showControlButtons(true)
-        
         let localView = createVideoView(for: 0, name: "我")
         videoViews[0] = localView
         callManager.setupLocalVideoView(localView)

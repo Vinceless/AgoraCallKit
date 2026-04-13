@@ -191,8 +191,6 @@ open class SingleVideoCallViewController: BaseCallViewController {
     
     public override func didDisconnect(error: Error?) {
         super.didDisconnect(error: error)
-        // 可选：显示提示后自动关闭
-        callManager.stopPreview()
     }
     
     // MARK: - 悬浮窗支持

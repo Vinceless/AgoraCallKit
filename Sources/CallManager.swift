@@ -190,7 +190,6 @@ public class CallManager {
             signalDelegate?.sendCancelSignal(toUserId: "\(remoteUser.uid)") { _ in }
         }
         
-        engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
     }
@@ -267,7 +266,6 @@ public class CallManager {
     /// 对方挂断
     public func onCallHangup(fromUserId: String) {
         guard "\(currentRemoteUser?.uid ?? 0)" == fromUserId else { return }
-        engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
     }
@@ -275,7 +273,6 @@ public class CallManager {
     /// 对方取消通话
     public func onCallCanceled(fromUserId: String) {
         guard "\(currentRemoteUser?.uid ?? 0)" == fromUserId else { return }
-        engine.leaveChannel()
         resetCall()
         uiDelegate?.didDisconnect(error: nil)
     }
@@ -292,8 +289,8 @@ public class CallManager {
     
     private func resetCall() {
         stopDurationTimer()
-        // 统一清理悬浮窗和画中画（必须在重置 currentCallType 之前）
-        cleanupFloatingAndPiP()
+        // 统一清理：离开频道、悬浮窗、画中画（必须在重置 currentCallType 之前）
+        cleanupAllResources()
         isCaller = false
         currentState = .idle
         currentCallType = nil
@@ -305,9 +302,14 @@ public class CallManager {
         remoteUsers.removeAll()
     }
     
-    /// 统一清理悬浮窗和画中画
-    private func cleanupFloatingAndPiP() {
-        // 同步执行，确保后台也能立即清理
+    /// 统一清理所有通话资源（离开频道、悬浮窗、画中画）
+    private func cleanupAllResources() {
+        // 离开频道，停止音视频流
+        engine.leaveChannel()
+        // 停止视频预览
+        if currentCallType == .video {
+            engine.stopPreview()
+        }
         // 隐藏悬浮窗
         if FloatingWindowManager.shared.isShowing() {
             FloatingWindowManager.shared.hideFloatingWindow()
