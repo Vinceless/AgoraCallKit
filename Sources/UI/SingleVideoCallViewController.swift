@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 /// 单聊视频通话界面
 open class SingleVideoCallViewController: BaseCallViewController {
@@ -140,6 +141,13 @@ open class SingleVideoCallViewController: BaseCallViewController {
     
     private func setupRemoteUserInfo() {
         remoteNameLabel.text = remoteUser?.name ?? "等待对方加入..."
+        if let avatar = remoteUser?.avatar, !avatar.isEmpty, let url = URL(string: avatar) {
+            remoteAvatarImageView.kf.setImage(
+                with: url,
+                placeholder: UIImage(systemName: "person.circle.fill"),
+                options: [.transition(.fade(0.3))]
+            )
+        }
     }
     
     // MARK: - 重写父类方法（UI 更新）

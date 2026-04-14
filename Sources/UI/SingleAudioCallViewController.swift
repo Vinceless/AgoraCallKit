@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 /// 单聊音频通话界面
 open class SingleAudioCallViewController: BaseCallViewController {
@@ -60,6 +61,13 @@ open class SingleAudioCallViewController: BaseCallViewController {
     
     private func setupRemoteUserInfo() {
         nameLabel.text = remoteUser?.name ?? "正在等待对方加入..."
+        if let avatar = remoteUser?.avatar, !avatar.isEmpty, let url = URL(string: avatar) {
+            avatarImageView.kf.setImage(
+                with: url,
+                placeholder: UIImage(systemName: "person.circle.fill"),
+                options: [.transition(.fade(0.3))]
+            )
+        }
     }
     
     open override func updateUIForState(_ state: CallState) {

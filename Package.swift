@@ -15,13 +15,18 @@ let package = Package(
         .package(
             url: "https://github.com/AgoraIO/AgoraRtcEngine_iOS.git",
             .upToNextMajor(from: "4.0.0")
+        ),
+        .package(
+            url: "https://github.com/onevcat/Kingfisher.git",
+            .upToNextMajor(from: "8.6.0")
         )
     ],
     targets: [
         .target(
             name: "AgoraCallKit",
             dependencies: [
-                .product(name: "AgoraRtcKit", package: "AgoraRtcEngine_iOS")
+                .product(name: "AgoraRtcKit", package: "AgoraRtcEngine_iOS"),
+                .product(name: "Kingfisher", package: "Kingfisher")
             ],
             path: "Sources",
             exclude: ["Test"]

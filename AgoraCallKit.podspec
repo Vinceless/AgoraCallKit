@@ -25,6 +25,7 @@ Pod::Spec.new do |spec|
   spec.swift_version = '5.0'
   
   spec.dependency 'AgoraRtcEngine_iOS'
+  spec.dependency 'Kingfisher'
 
 end
 

@@ -364,10 +364,13 @@ public class CallManager {
     /// 对方接受通话
     public func onCallAccepted(fromUserId: String) {
         log("对方接受: fromUserId=\(fromUserId)")
-        guard currentState == .calling || currentState == .connecting,
-              currentRemoteUser?.userId == fromUserId else {
-            log("⚠️ 接受忽略: guard 不通过 (state=\(currentState), remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))")
+        guard currentState == .calling || currentState == .connecting else {
+            log("⚠️ 接受忽略: 当前状态=\(currentState)")
             return
+        }
+        // 单聊场景：只要不是自己发的就处理（userId 可能因 App 端数据源不同而不匹配）
+        if currentRemoteUser?.userId != fromUserId {
+            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
         }
         stopCallingTimeout()
         currentState = .connecting
@@ -376,14 +379,14 @@ public class CallManager {
     /// 对方拒绝通话
     public func onCallRejected(fromUserId: String, reason: String?) {
         log("对方拒绝: fromUserId=\(fromUserId), reason=\(reason ?? "nil")")
-        guard currentRemoteUser?.userId == fromUserId else {
-            log("⚠️ 拒绝忽略: userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))")
-            return
-        }
         // 允许从 calling/connecting/connected 状态拒绝（对方可能先加入频道再拒绝）
         guard currentState == .calling || currentState == .connecting || currentState == .connected else {
             log("⚠️ 拒绝忽略: 当前状态=\(currentState)")
             return
+        }
+        // 单聊场景：只要不是自己发的就处理
+        if currentRemoteUser?.userId != fromUserId {
+            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
         }
         stopCallingTimeout()
         disconnectCall(error: nil)
@@ -396,9 +399,9 @@ public class CallManager {
             log("⚠️ 挂断忽略: 当前状态=\(currentState)")
             return
         }
-        guard currentRemoteUser?.userId == fromUserId else {
-            log("⚠️ 挂断忽略: userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))")
-            return
+        // 单聊场景：只要不是自己发的就处理
+        if currentRemoteUser?.userId != fromUserId {
+            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
         }
         stopCallingTimeout()
         disconnectCall(error: nil)
@@ -411,9 +414,9 @@ public class CallManager {
             log("⚠️ 取消忽略: 当前状态=\(currentState)")
             return
         }
-        guard currentRemoteUser?.userId == fromUserId else {
-            log("⚠️ 取消忽略: userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))")
-            return
+        // 单聊场景：只要不是自己发的就处理
+        if currentRemoteUser?.userId != fromUserId {
+            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
         }
         stopCallingTimeout()
         disconnectCall(error: nil)
@@ -692,9 +695,9 @@ extension CallManager: AgoraEngineDelegate {
                 currentState = .connecting
             }
         case .connected:
-            // 引擎连接成功，推进状态（计时在远端用户加入时才开始）
-            if currentState == .connecting || currentState == .calling || currentState == .incoming {
-                currentState = .connected
+            // 引擎连接成功，推进到 .connecting（.connected 只在远端用户加入时才设置）
+            if currentState == .calling || currentState == .incoming {
+                currentState = .connecting
             }
         case .reconnecting:
             if currentState == .connected {

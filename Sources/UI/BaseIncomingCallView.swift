@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 /// 来电弹窗代理
 public protocol IncomingCallViewDelegate: AnyObject {
@@ -175,7 +176,11 @@ open class BaseIncomingCallView: UIView {
     }
     
     open func loadAvatar(from url: URL) {
-        avatarImageView.image = UIImage(systemName: "person.circle.fill")
+        avatarImageView.kf.setImage(
+            with: url,
+            placeholder: UIImage(systemName: "person.circle.fill"),
+            options: [.transition(.fade(0.3))]
+        )
     }
     
     open func show(in view: UIView, completion: (() -> Void)? = nil) {
