@@ -66,6 +66,9 @@ open class SingleVideoCallViewController: BaseCallViewController {
     private var remoteUid: UInt?
     private var floatingVideoView: UIView?  // 悬浮窗专用的视频视图
     
+    /// 远程信息容器（头像+名字+背景），远端用户加入后隐藏
+    private weak var infoContainer: UIView?
+    
     // MARK: - 生命周期
     open override func viewDidLoad() {
         super.viewDidLoad()
@@ -114,6 +117,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
             infoContainer.widthAnchor.constraint(equalToConstant: 200),
             infoContainer.heightAnchor.constraint(equalToConstant: 120)
         ])
+        self.infoContainer = infoContainer
         
         infoContainer.addSubview(remoteAvatarImageView)
         infoContainer.addSubview(remoteNameLabel)
@@ -143,12 +147,11 @@ open class SingleVideoCallViewController: BaseCallViewController {
         super.updateUIForState(state)
         switch state {
         case .connected:
-            // 连接成功后隐藏头像占位图，显示视频
-            remoteAvatarImageView.isHidden = true
-            // 连接成功后设置本地视频渲染
+            // 连接成功后设置本地视频渲染（头像等在远端用户加入时才隐藏）
             callManager.setupLocalVideoView(miniVideoView)
         case .disconnected, .failed:
             remoteAvatarImageView.isHidden = false
+            infoContainer?.isHidden = false
         default:
             break
         }
@@ -179,12 +182,15 @@ open class SingleVideoCallViewController: BaseCallViewController {
         if let floatingView = floatingVideoView {
             callManager.setupRemoteVideoView(floatingView, forUid: user.uid)
         }
+        // 远端用户加入：隐藏头像、名字和背景容器
+        infoContainer?.isHidden = true
         remoteAvatarImageView.isHidden = true
         remoteNameLabel.text = user.name
     }
     
     open override func remoteUserDidLeave(_ user: CallUser) {
         super.remoteUserDidLeave(user)
+        infoContainer?.isHidden = false
         remoteAvatarImageView.isHidden = false
         remoteNameLabel.text = "对方已离开"
     }

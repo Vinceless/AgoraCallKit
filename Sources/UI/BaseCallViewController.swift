@@ -343,8 +343,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         controlStackView.addArrangedSubview(muteAudioButton)
         controlStackView.addArrangedSubview(speakerButton)
         controlStackView.addArrangedSubview(muteVideoButton)
+        controlStackView.addArrangedSubview(endCallButton)
         
-        callStackView.addArrangedSubview(endCallButton)
         callStackView.addArrangedSubview(rejectCallButton)
         callStackView.addArrangedSubview(acceptCallButton)
         callStackView.addArrangedSubview(switchCameraButton)
@@ -449,6 +449,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     // MARK: - 控制方法
     
     @objc open func toggleAudio() {
+        CallSoundService.shared.playButtonClickSound()
         let newState = !muteAudioButton.isSelected
         callManager.muteAudio(newState)
         muteAudioButton.isSelected = newState
@@ -458,6 +459,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc open func toggleVideo() {
+        CallSoundService.shared.playButtonClickSound()
         let newState = !muteVideoButton.isSelected
         callManager.muteVideo(newState)
         muteVideoButton.isSelected = newState
@@ -467,6 +469,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc open func toggleSpeaker() {
+        CallSoundService.shared.playButtonClickSound()
         let newState = !speakerButton.isSelected
         callManager.setSpeakerEnabled(newState)
         speakerButton.isSelected = newState
@@ -530,19 +533,23 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc open func switchCamera() {
+        CallSoundService.shared.playButtonClickSound()
         callManager.switchCamera()
     }
     
     @objc open func endCall() {
+        CallSoundService.shared.playButtonClickSound()
         callManager.hangUp()
         dismiss(animated: true)
     }
     
     @objc open func acceptCall() {
+        CallSoundService.shared.playButtonClickSound()
         callManager.acceptCall()
     }
     
     @objc open func rejectCall() {
+        CallSoundService.shared.playButtonClickSound()
         if callManager.currentState == .incoming {
             callManager.rejectCall()
         } else {
@@ -593,9 +600,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         let isVideo = callType == .video
         
         if state == .incoming {
-            muteAudioButton.isHidden = false
-            speakerButton.isHidden = false
-            muteVideoButton.isHidden = !isVideo
+            // 来电时：隐藏控制按钮，只显示接听/拒绝
+            muteAudioButton.isHidden = true
+            speakerButton.isHidden = true
+            muteVideoButton.isHidden = true
             endCallButton.isHidden = true
             switchCameraButton.isHidden = true
             
@@ -604,7 +612,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             acceptCallButton.isHidden = false
             updateButtonTitle(acceptCallButton, title: "接听")
             
-            controlStackView.isHidden = false
+            controlStackView.isHidden = true
             callStackView.isHidden = false
         } else if state == .calling {
             if isVideo {
@@ -621,18 +629,19 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                 controlStackView.isHidden = false
                 callStackView.isHidden = false
             } else {
+                // 语音呼叫：静音 + 扬声器 + 取消按钮，同一行
                 muteAudioButton.isHidden = false
                 speakerButton.isHidden = false
                 muteVideoButton.isHidden = true
+                endCallButton.isHidden = false
+                updateButtonTitle(endCallButton, title: "取消")
                 switchCameraButton.isHidden = true
                 
                 rejectCallButton.isHidden = true
                 acceptCallButton.isHidden = true
-                endCallButton.isHidden = false
-                updateButtonTitle(endCallButton, title: "取消")
                 
                 controlStackView.isHidden = false
-                callStackView.isHidden = false
+                callStackView.isHidden = true
             }
         } else if state == .connected {
             if isVideo {
@@ -649,18 +658,19 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                 controlStackView.isHidden = false
                 callStackView.isHidden = false
             } else {
+                // 语音通话：静音 + 扬声器 + 挂断按钮，同一行
                 muteAudioButton.isHidden = false
                 speakerButton.isHidden = false
                 muteVideoButton.isHidden = true
+                endCallButton.isHidden = false
+                updateButtonTitle(endCallButton, title: "挂断")
                 switchCameraButton.isHidden = true
                 
                 rejectCallButton.isHidden = true
                 acceptCallButton.isHidden = true
-                endCallButton.isHidden = false
-                updateButtonTitle(endCallButton, title: "挂断")
                 
                 controlStackView.isHidden = false
-                callStackView.isHidden = false
+                callStackView.isHidden = true
             }
         } else if state == .connecting {
             if isVideo {
@@ -677,18 +687,19 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                 controlStackView.isHidden = false
                 callStackView.isHidden = false
             } else {
+                // 语音连接中：静音 + 扬声器 + 取消按钮，同一行
                 muteAudioButton.isHidden = false
                 speakerButton.isHidden = false
                 muteVideoButton.isHidden = true
+                endCallButton.isHidden = false
+                updateButtonTitle(endCallButton, title: "取消")
                 switchCameraButton.isHidden = true
                 
                 rejectCallButton.isHidden = true
                 acceptCallButton.isHidden = true
-                endCallButton.isHidden = false
-                updateButtonTitle(endCallButton, title: "取消")
                 
                 controlStackView.isHidden = false
-                callStackView.isHidden = false
+                callStackView.isHidden = true
             }
         } else {
             controlStackView.isHidden = true

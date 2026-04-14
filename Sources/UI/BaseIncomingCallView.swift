@@ -153,10 +153,12 @@ open class BaseIncomingCallView: UIView {
     }
     
     @objc open func acceptTapped() {
+        CallSoundService.shared.playButtonClickSound()
         delegate?.incomingCallViewDidAccept(self)
     }
     
     @objc open func rejectTapped() {
+        CallSoundService.shared.playButtonClickSound()
         delegate?.incomingCallViewDidReject(self)
     }
     
