@@ -45,6 +45,8 @@ public class FloatingWindowManager {
     
     private var floatingWindow: FloatingCallWindow?
     private weak var currentViewController: FloatingWindowCompatible?
+    /// 强引用 VC，防止 dismiss 后被释放导致无法恢复
+    private var retainedViewController: FloatingWindowCompatible?
     
     /// 显示悬浮窗
     /// - Parameter viewController: 当前通话控制器（需遵循 FloatingWindowCompatible）
@@ -53,6 +55,7 @@ public class FloatingWindowManager {
             existing.hide()
         }
         currentViewController = viewController
+        retainedViewController = viewController
         floatingWindow = FloatingCallWindow()
         _ = floatingWindow?.view
         floatingWindow?.configure(with: viewController)
@@ -66,6 +69,7 @@ public class FloatingWindowManager {
         floatingWindow?.hide()
         floatingWindow = nil
         currentViewController = nil
+        retainedViewController = nil
     }
     
     /// 从悬浮窗恢复到全屏
@@ -271,7 +275,7 @@ class FloatingCallWindow: UIViewController {
                 durationLabel.heightAnchor.constraint(equalToConstant: 16),
                 
                 statusLabel.centerXAnchor.constraint(equalTo: audioView.centerXAnchor),
-                statusLabel.centerYAnchor.constraint(equalTo: audioView.centerYAnchor, constant: -10)
+                statusLabel.bottomAnchor.constraint(equalTo: audioView.bottomAnchor, constant: -8)
             ])
             videoView.isHidden = true
         }
@@ -296,16 +300,23 @@ class FloatingCallWindow: UIViewController {
     }
     
     private func updateAudioContent() {
-        let duration = originalViewController?.getCurrentCallDuration() ?? 0
-        if duration > 0 {
+        let callState = callManager?.currentState ?? .idle
+        if callState == .connected {
+            // 已接通：显示通话时长
+            let duration = originalViewController?.getCurrentCallDuration() ?? 0
             let minutes = Int(duration) / 60
             let seconds = Int(duration) % 60
             durationLabel.text = String(format: " %02d:%02d ", minutes, seconds)
             durationLabel.isHidden = false
             statusLabel.isHidden = true
-        } else {
+        } else if callState == .calling || callState == .connecting || callState == .incoming {
+            // 未接通：显示连接中
             statusLabel.text = " 连接中 "
             statusLabel.isHidden = false
+            durationLabel.isHidden = true
+        } else {
+            // 其他状态
+            statusLabel.isHidden = true
             durationLabel.isHidden = true
         }
     }

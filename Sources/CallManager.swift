@@ -525,7 +525,7 @@ public class CallManager {
         log("启动呼叫超时定时器: \(callingTimeoutInterval)s")
         callingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: callingTimeoutInterval, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            if self.currentState == .calling || self.currentState == .incoming {
+            if self.currentState == .calling || self.currentState == .incoming || self.currentState == .connecting {
                 self.log("⚠️ 呼叫超时!")
                 self.failWithError("呼叫超时，对方未接听")
             }

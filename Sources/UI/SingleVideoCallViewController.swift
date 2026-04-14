@@ -52,13 +52,12 @@ open class SingleVideoCallViewController: BaseCallViewController {
         iv.backgroundColor = .systemGray5
         iv.image = UIImage(systemName: "person.circle.fill")
         iv.tintColor = .systemGray2
-        iv.isHidden = true
         return iv
     }()
     
     private let remoteNameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 18, weight: .medium)
+        label.font = .systemFont(ofSize: 20, weight: .medium)
         label.textColor = .white
         label.textAlignment = .center
         return label
@@ -67,7 +66,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     private var remoteUid: UInt?
     private var floatingVideoView: UIView?  // 悬浮窗专用的视频视图
     
-    /// 远程信息容器（头像+名字+背景），远端用户加入后隐藏
+    /// 远程信息容器（时长+头像+名字+状态），远端用户加入后隐藏
     private weak var infoContainer: UIView?
     
     // MARK: - 生命周期
@@ -105,34 +104,22 @@ open class SingleVideoCallViewController: BaseCallViewController {
         // 本地视频小窗（使用 frame 布局，不用 Auto Layout）
         view.addSubview(miniVideoView)
         
-        // 远程信息视图
-        let infoContainer = UIView()
-        infoContainer.backgroundColor = UIColor.black.withAlphaComponent(0.3)
-        infoContainer.layer.cornerRadius = 20
-        infoContainer.clipsToBounds = true
+        // 远程信息容器（与音频通话一样的垂直布局）
+        let infoContainer = UIStackView(arrangedSubviews: [remoteAvatarImageView, remoteNameLabel, statusLabel])
+        infoContainer.axis = .vertical
+        infoContainer.spacing = 12
+        infoContainer.alignment = .center
         view.addSubview(infoContainer)
         infoContainer.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            infoContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            infoContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            infoContainer.widthAnchor.constraint(equalToConstant: 200),
-            infoContainer.heightAnchor.constraint(equalToConstant: 120)
-        ])
         self.infoContainer = infoContainer
         
-        infoContainer.addSubview(remoteAvatarImageView)
-        infoContainer.addSubview(remoteNameLabel)
-        remoteAvatarImageView.translatesAutoresizingMaskIntoConstraints = false
-        remoteNameLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            remoteAvatarImageView.centerXAnchor.constraint(equalTo: infoContainer.centerXAnchor),
-            remoteAvatarImageView.topAnchor.constraint(equalTo: infoContainer.topAnchor, constant: 16),
-            remoteAvatarImageView.widthAnchor.constraint(equalToConstant: 50),
-            remoteAvatarImageView.heightAnchor.constraint(equalToConstant: 50),
-            remoteNameLabel.centerXAnchor.constraint(equalTo: infoContainer.centerXAnchor),
-            remoteNameLabel.topAnchor.constraint(equalTo: remoteAvatarImageView.bottomAnchor, constant: 8),
-            remoteNameLabel.leadingAnchor.constraint(equalTo: infoContainer.leadingAnchor, constant: 8),
-            remoteNameLabel.trailingAnchor.constraint(equalTo: infoContainer.trailingAnchor, constant: -8)
+            remoteAvatarImageView.widthAnchor.constraint(equalToConstant: 100),
+            remoteAvatarImageView.heightAnchor.constraint(equalToConstant: 100),
+            remoteNameLabel.heightAnchor.constraint(equalToConstant: 30),
+            statusLabel.heightAnchor.constraint(equalToConstant: 15),
+            infoContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 80),
+            infoContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
         
         // 设置本地视频渲染
@@ -154,12 +141,18 @@ open class SingleVideoCallViewController: BaseCallViewController {
     open override func updateUIForState(_ state: CallState) {
         super.updateUIForState(state)
         switch state {
+        case .calling:
+            statusLabel.text = "呼叫中..."
+        case .incoming:
+            statusLabel.text = "对方邀请你视频通话..."
+        case .connecting:
+            statusLabel.text = "连接中..."
         case .connected:
             // 连接成功后设置本地视频渲染（头像等在远端用户加入时才隐藏）
             callManager.setupLocalVideoView(miniVideoView)
         case .disconnected, .failed:
-            remoteAvatarImageView.isHidden = false
             infoContainer?.isHidden = false
+            remoteAvatarImageView.isHidden = false
         default:
             break
         }
@@ -190,10 +183,11 @@ open class SingleVideoCallViewController: BaseCallViewController {
         if let floatingView = floatingVideoView {
             callManager.setupRemoteVideoView(floatingView, forUid: user.uid)
         }
-        // 远端用户加入：隐藏头像、名字和背景容器
+        // 远端用户加入：隐藏信息容器（头像+名字+状态）
         infoContainer?.isHidden = true
         remoteAvatarImageView.isHidden = true
         remoteNameLabel.text = user.name
+        statusLabel.text = "通话中"
     }
     
     open override func remoteUserDidLeave(_ user: CallUser) {
@@ -201,6 +195,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
         infoContainer?.isHidden = false
         remoteAvatarImageView.isHidden = false
         remoteNameLabel.text = "对方已离开"
+        statusLabel.text = "通话结束"
     }
     
     public override func didDisconnect(error: Error?) {

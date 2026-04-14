@@ -587,8 +587,17 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         case .disconnected, .failed:
             statusLabel.text = state == .disconnected ? "通话结束" : "通话失败"
             durationLabel.isHidden = true
+            // 显示关闭按钮，让用户可以退出
             controlStackView.isHidden = true
-            callStackView.isHidden = true
+            callStackView.isHidden = false
+            rejectCallButton.isHidden = true
+            acceptCallButton.isHidden = true
+            switchCameraButton.isHidden = true
+            muteAudioButton.isHidden = true
+            speakerButton.isHidden = true
+            muteVideoButton.isHidden = true
+            endCallButton.isHidden = false
+            updateButtonTitle(endCallButton, title: "关闭")
         default:
             break
         }
@@ -726,8 +735,14 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         IncomingCallManager.shared.hide()
         if presentingViewController != nil {
             statusLabel.text = error == nil ? "通话结束" : "通话失败"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.dismiss(animated: true)
+            if error != nil {
+                // 有错误（如超时）直接关闭，不延迟
+                dismiss(animated: true)
+            } else {
+                // 正常挂断，短暂显示通话结束后关闭
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    self?.dismiss(animated: true)
+                }
             }
         }
     }
@@ -750,9 +765,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     public func didOccurError(_ error: Error) {
-        let alert = UIAlertController(title: "通话错误", message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "确定", style: .default) { [weak self] _ in self?.dismiss(animated: true) })
-        present(alert, animated: true)
+        // 不弹 alert，直接 dismiss（didDisconnect 已有延迟 dismiss 逻辑）
+        dismiss(animated: true)
     }
     
     // MARK: - FloatingWindowCompatible 默认实现

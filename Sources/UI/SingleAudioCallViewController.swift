@@ -38,16 +38,16 @@ open class SingleAudioCallViewController: BaseCallViewController {
     }
     
     private func setupAudioUI() {
-        let stack = UIStackView(arrangedSubviews: [durationLabel, avatarImageView, nameLabel, statusLabel])
+        // durationLabel 独立布局，隐藏时不影响其他元素位置
+        let stack = UIStackView(arrangedSubviews: [avatarImageView, nameLabel, statusLabel])
         stack.axis = .vertical
         stack.spacing = 12
         stack.alignment = .center
         view.addSubview(stack)
         
-        stack.setCustomSpacing(150, after: durationLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        
         avatarImageView.translatesAutoresizingMaskIntoConstraints = false
+        
         NSLayoutConstraint.activate([
             avatarImageView.widthAnchor.constraint(equalToConstant: 100),
             avatarImageView.heightAnchor.constraint(equalToConstant: 100),
