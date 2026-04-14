@@ -12,7 +12,7 @@ public protocol CallUIDelegate: AnyObject {
     /// 通话状态变化
     func callStateDidChange(_ state: CallState)
     /// 已加入频道，获得本地用户信息
-    func didConnect(withUser user: CallUser)
+    func didJoinChannel(withUser user: CallUser)
     /// 通话断开（正常挂断或错误）
     func didDisconnect(error: Error?)
     /// 远端用户加入（单聊为对方，群聊为任意成员）
@@ -25,16 +25,28 @@ public protocol CallUIDelegate: AnyObject {
     func didReceiveIncomingCall(from user: CallUser, callType: CallType, channelName: String, token: String)
     /// 发生错误
     func didOccurError(_ error: Error)
+    /// 远端用户视频静音状态变化
+    func remoteUserDidToggleVideo(_ user: CallUser, muted: Bool)
+    /// 远端用户音频静音状态变化
+    func remoteUserDidToggleAudio(_ user: CallUser, muted: Bool)
+    /// 本地用户音频静音状态变化
+    func localAudioMutedDidChange(_ muted: Bool)
+    /// 本地用户视频静音状态变化
+    func localVideoMutedDidChange(_ muted: Bool)
 }
 
 /// 提供默认空实现，方便子类只重写部分方法
 public extension CallUIDelegate {
     func callStateDidChange(_ state: CallState) {}
-    func didConnect(withUser user: CallUser) {}
+    func didJoinChannel(withUser user: CallUser) {}
     func didDisconnect(error: Error?) {}
     func remoteUserDidJoin(_ user: CallUser) {}
     func remoteUserDidLeave(_ user: CallUser) {}
     func didUpdateDuration(_ duration: TimeInterval) {}
     func didReceiveIncomingCall(from user: CallUser, callType: CallType, channelName: String, token: String) {}
     func didOccurError(_ error: Error) {}
+    func remoteUserDidToggleVideo(_ user: CallUser, muted: Bool) {}
+    func remoteUserDidToggleAudio(_ user: CallUser, muted: Bool) {}
+    func localAudioMutedDidChange(_ muted: Bool) {}
+    func localVideoMutedDidChange(_ muted: Bool) {}
 }

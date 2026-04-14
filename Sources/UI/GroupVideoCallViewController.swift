@@ -105,8 +105,8 @@ open class GroupVideoCallViewController: BaseCallViewController {
         userCountLabel.text = "在线: \(videoViews.count)"
     }
     
-    open override func didConnect(withUser user: CallUser) {
-        super.didConnect(withUser: user)
+    open override func didJoinChannel(withUser user: CallUser) {
+        super.didJoinChannel(withUser: user)
         // 通话连接后设置本地视频渲染
         if let view = videoViews[0] {
             callManager.setupLocalVideoView(view)

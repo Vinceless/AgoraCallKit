@@ -71,8 +71,8 @@ open class GroupAudioCallViewController: BaseCallViewController {
         userCountLabel.text = "在线人数: \(userList.count)"
     }
     
-    open override func didConnect(withUser user: CallUser) {
-        super.didConnect(withUser: user)
+    open override func didJoinChannel(withUser user: CallUser) {
+        super.didJoinChannel(withUser: user)
         updateUserList()
     }
     

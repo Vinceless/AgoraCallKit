@@ -23,8 +23,12 @@ public protocol AgoraEngineDelegate: AnyObject {
     func engine(_ engine: AgoraEngineManager, didOccurError error: Error)
     /// 本地视频静音状态变化
     func engine(_ engine: AgoraEngineManager, localVideoMuted muted: Bool)
+    /// 本地音频静音状态变化
+    func engine(_ engine: AgoraEngineManager, localAudioMuted muted: Bool)
     /// 远端视频静音状态变化
     func engine(_ engine: AgoraEngineManager, remoteVideoMuted muted: Bool, ofUid uid: UInt)
+    /// 远端音频静音状态变化
+    func engine(_ engine: AgoraEngineManager, remoteAudioMuted muted: Bool, ofUid uid: UInt)
     /// 连接状态变化
     func engine(_ engine: AgoraEngineManager, connectionStateChanged state: AgoraConnectionState)
 }
@@ -192,14 +196,17 @@ public class AgoraEngineManager: NSObject {
     
     // MARK: - 音视频控制
     /// 静音/取消静音本地音频
+    /// 注意：Agora SDK 会通过 rtcEngine(_:didAudioMuted:byUid:) 回调通知状态变化，
+    /// 无需手动触发 delegate，避免重复通知
     public func muteLocalAudio(_ mute: Bool) {
         engine?.muteLocalAudioStream(mute)
     }
     
     /// 静音/取消静音本地视频
+    /// 注意：Agora SDK 会通过 rtcEngine(_:didVideoMuted:byUid:) 回调通知状态变化，
+    /// 无需手动触发 delegate，避免重复通知
     public func muteLocalVideo(_ mute: Bool) {
         engine?.muteLocalVideoStream(mute)
-        delegate?.engine(self, localVideoMuted: mute)
     }
     
     /// 开启/关闭扬声器
@@ -249,6 +256,10 @@ extension AgoraEngineManager: AgoraRtcEngineDelegate {
     
     public func rtcEngine(_ engine: AgoraRtcEngineKit, didVideoMuted muted: Bool, byUid uid: UInt) {
         delegate?.engine(self, remoteVideoMuted: muted, ofUid: uid)
+    }
+    
+    public func rtcEngine(_ engine: AgoraRtcEngineKit, didAudioMuted muted: Bool, byUid uid: UInt) {
+        delegate?.engine(self, remoteAudioMuted: muted, ofUid: uid)
     }
     
     public func rtcEngine(_ engine: AgoraRtcEngineKit, connectionChangedTo state: AgoraConnectionState, reason: AgoraConnectionChangedReason) {
