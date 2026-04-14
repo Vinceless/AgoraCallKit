@@ -118,7 +118,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
             remoteAvatarImageView.heightAnchor.constraint(equalToConstant: 100),
             remoteNameLabel.heightAnchor.constraint(equalToConstant: 30),
             statusLabel.heightAnchor.constraint(equalToConstant: 15),
-            infoContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 80),
+            infoContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 180),
             infoContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
         

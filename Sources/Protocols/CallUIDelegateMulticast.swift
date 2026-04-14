@@ -68,6 +68,10 @@ public final class CallUIDelegateMulticast: CallUIDelegate {
         allDelegates.forEach { $0.didOccurError(error) }
     }
     
+    public func didCallTimeout() {
+        allDelegates.forEach { $0.didCallTimeout() }
+    }
+    
     public func remoteUserDidToggleVideo(_ user: CallUser, muted: Bool) {
         allDelegates.forEach { $0.remoteUserDidToggleVideo(user, muted: muted) }
     }

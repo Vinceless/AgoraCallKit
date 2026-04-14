@@ -112,7 +112,7 @@ open class BaseIncomingCallView: UIView {
         NSLayoutConstraint.activate([
             containerView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             containerView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            containerView.topAnchor.constraint(equalTo: safeTopAnchor, constant: 12),
+            containerView.topAnchor.constraint(equalTo: safeTopAnchor, constant: 0),
             containerView.heightAnchor.constraint(equalToConstant: 80),
             
             avatarImageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
@@ -185,7 +185,8 @@ open class BaseIncomingCallView: UIView {
     
     open func show(in view: UIView, completion: (() -> Void)? = nil) {
         self.alpha = 0
-        self.transform = CGAffineTransform(translationX: 0, y: -88)
+        
+        self.transform = CGAffineTransform(translationX: 0, y: -getStatusBarHeight())
         view.addSubview(self)
         self.frame = view.bounds
         UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5, options: .curveEaseOut) {
@@ -204,6 +205,16 @@ open class BaseIncomingCallView: UIView {
             self.removeFromSuperview()
             completion?()
         }
+    }
+    
+    func getStatusBarHeight() -> CGFloat {
+        // 获取所有连接的场景
+        let scenes = UIApplication.shared.connectedScenes
+        // 找到处于前台活跃状态的窗口场景
+        let windowScene = scenes.first as? UIWindowScene
+        // 通过场景的状态栏管理器获取高度
+        let statusBarHeight = windowScene?.statusBarManager?.statusBarFrame.height ?? 0
+        return statusBarHeight
     }
     
     private var safeTopAnchor: NSLayoutYAxisAnchor {

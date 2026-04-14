@@ -50,6 +50,9 @@ public class CallSoundService {
     /// 按键点击音音频文件路径
     public var buttonClickSoundPath: String?
     
+    /// 是否启用声音（默认 true，设为 false 则所有铃声/提示音/按键音都不播放，仅保留震动）
+    public var isSoundEnabled: Bool = true
+    
     /// 是否启用按键点击音（默认 true）
     public var isButtonClickSoundEnabled: Bool = true
     
@@ -103,15 +106,20 @@ public class CallSoundService {
         print("[CallSoundService] 开始来电彩铃")
         stopAllSounds()
         
-        if let path = incomingRingtonePath {
-            // 自定义彩铃音频文件
-            playRingtoneFile(at: path, loops: -1)
-            startIncomingVibration()
-        } else if useSystemRingtone {
-            // 使用系统铃声震动模式
-            startSystemRingtoneVibration()
+        if isSoundEnabled {
+            if let path = incomingRingtonePath {
+                // 自定义彩铃音频文件
+                playRingtoneFile(at: path, loops: -1)
+                startIncomingVibration()
+            } else if useSystemRingtone {
+                // 使用系统铃声震动模式
+                startSystemRingtoneVibration()
+            } else {
+                // 仅震动
+                startIncomingVibration()
+            }
         } else {
-            // 仅震动
+            // 声音禁用，仅震动
             startIncomingVibration()
         }
         
@@ -134,15 +142,18 @@ public class CallSoundService {
         print("[CallSoundService] 开始呼叫等待音")
         stopAllSounds()
         
-        if let path = outgoingRingtonePath {
-            // 自定义回铃音音频文件
-            playRingtoneFile(at: path, loops: -1)
-        } else {
-            // 使用系统回铃音（Simulated carrier ringback tone）
-            playSystemOutgoingSound()
+        if isSoundEnabled {
+            if let path = outgoingRingtonePath {
+                // 自定义回铃音音频文件
+                playRingtoneFile(at: path, loops: -1)
+            } else {
+                // 使用系统回铃音（Simulated carrier ringback tone）
+                playSystemOutgoingSound()
+            }
         }
+        // 声音禁用时不播放任何声音，主叫端不需要震动
         
-        isPlayingRingtone = true
+        isPlayingRingtone = isSoundEnabled
     }
     
     /// 停止呼叫等待音
@@ -158,6 +169,7 @@ public class CallSoundService {
     /// 播放接通提示音
     public func playCallConnectedSound() {
         print("[CallSoundService] 播放接通提示音")
+        guard isSoundEnabled else { return }
         if let path = callConnectedSoundPath {
             playEffectSound(at: path)
         } else {
@@ -169,6 +181,7 @@ public class CallSoundService {
     /// 播放挂断提示音
     public func playCallEndedSound() {
         print("[CallSoundService] 播放挂断提示音")
+        guard isSoundEnabled else { return }
         if let path = callEndedSoundPath {
             playEffectSound(at: path)
         } else {
@@ -181,7 +194,7 @@ public class CallSoundService {
     
     /// 播放按钮点击音
     public func playButtonClickSound() {
-        guard isButtonClickSoundEnabled else { return }
+        guard isSoundEnabled, isButtonClickSoundEnabled else { return }
         if let path = buttonClickSoundPath {
             playEffectSound(at: path)
         } else {
@@ -320,8 +333,10 @@ public class CallSoundService {
     
     /// 播放系统通知音 + 震动
     private func playSystemSoundAndVibrate() {
-        // 系统收到消息的音效
-        AudioServicesPlaySystemSound(1002) // Tock
+        if isSoundEnabled {
+            // 系统收到消息的音效
+            AudioServicesPlaySystemSound(1002) // Tock
+        }
         AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
     }
     

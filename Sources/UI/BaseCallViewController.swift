@@ -735,14 +735,9 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         IncomingCallManager.shared.hide()
         if presentingViewController != nil {
             statusLabel.text = error == nil ? "通话结束" : "通话失败"
-            if error != nil {
-                // 有错误（如超时）直接关闭，不延迟
-                dismiss(animated: true)
-            } else {
-                // 正常挂断，短暂显示通话结束后关闭
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    self?.dismiss(animated: true)
-                }
+            // 统一延迟 dismiss，让用户能看到通话结束/失败的状态
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.dismiss(animated: true)
             }
         }
     }
@@ -765,8 +760,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     public func didOccurError(_ error: Error) {
-        // 不弹 alert，直接 dismiss（didDisconnect 已有延迟 dismiss 逻辑）
-        dismiss(animated: true)
+        // 不直接 dismiss，由 didDisconnect 统一处理 dismiss 逻辑
+        // （发起通话阶段 Token/信令失败也会触发此回调，直接 dismiss 会导致刚 present 就被关闭）
     }
     
     // MARK: - FloatingWindowCompatible 默认实现

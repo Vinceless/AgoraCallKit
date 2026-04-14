@@ -61,7 +61,7 @@ public class CallManager {
     private var callStartTime: Date?
     private var durationTimer: Timer?
     
-    /// 呼叫超时定时器（默认 30 秒）
+    /// 呼叫超时定时器（默认 90 秒）
     private var callingTimeoutTimer: Timer?
     public var callingTimeoutInterval: TimeInterval = 30
     
@@ -126,19 +126,23 @@ public class CallManager {
             return
         }
         
-        isCaller = true
-        currentCallType = callType
-        currentRemoteUser = user
-        currentState = .calling
-        currentChannel = channelName
-        startCallingTimeout()
-        
         guard let userId = userProvider?.currentUserId else {
             log("⚠️ 发起失败: 无法获取当前用户ID")
             failWithError("无法获取当前用户ID", completion: completion)
             return
         }
         
+        isCaller = true
+        currentCallType = callType
+        currentRemoteUser = user
+        currentChannel = channelName
+        currentState = .calling
+        startCallingTimeout()
+        
+        // 立即回调 success，让 App 先弹出通话界面
+        completion?(.success(()))
+        
+        // 异步获取 Token、加入频道、发送信令
         tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -148,21 +152,20 @@ public class CallManager {
                 let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if !success {
                     self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
-                    self.failWithError("加入频道失败", completion: completion)
+                    self.failWithError("加入频道失败")
                     return
                 }
                 self.signalDelegate?.sendCallRequest(toUserId: user.userId, channelName: channelName, token: token, callType: callType) { result in
                     if case .failure(let error) = result {
                         self.log("⚠️ 发送信令失败: \(error.localizedDescription)")
-                        self.failWithError(error.localizedDescription, completion: completion)
+                        self.failWithError(error.localizedDescription)
                     } else {
                         self.log("发送信令成功")
-                        completion?(.success(()))
                     }
                 }
             case .failure(let error):
                 self.log("⚠️ 获取 Token 失败: \(error.localizedDescription)")
-                self.failWithError(error.localizedDescription, completion: completion)
+                self.failWithError(error.localizedDescription)
             }
         }
     }
@@ -180,18 +183,22 @@ public class CallManager {
             return
         }
         
-        isCaller = true
-        currentCallType = callType
-        currentState = .calling
-        currentChannel = channelName
-        startCallingTimeout()
-        
         guard let userId = userProvider?.currentUserId else {
             log("⚠️ 发起失败: 无法获取当前用户ID")
             completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "无法获取当前用户ID"])))
             return
         }
         
+        isCaller = true
+        currentCallType = callType
+        currentState = .calling
+        currentChannel = channelName
+        startCallingTimeout()
+        
+        // 立即回调 success，让 App 先弹出通话界面
+        completion?(.success(()))
+        
+        // 异步获取 Token、加入频道
         tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -201,14 +208,13 @@ public class CallManager {
                 let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if success {
                     self.currentState = .connecting
-                    completion?(.success(()))
                 } else {
                     self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
-                    completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
+                    self.failWithError("加入频道失败")
                 }
             case .failure(let error):
                 self.log("⚠️ 获取 Token 失败: \(error.localizedDescription)")
-                completion?(.failure(error))
+                self.failWithError(error.localizedDescription)
             }
         }
     }
@@ -526,8 +532,11 @@ public class CallManager {
         callingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: callingTimeoutInterval, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             if self.currentState == .calling || self.currentState == .incoming || self.currentState == .connecting {
-                self.log("⚠️ 呼叫超时!")
-                self.failWithError("呼叫超时，对方未接听")
+                self.log("⚠️ 呼叫超时! 通知 App 端处理")
+                self.stopCallingTimeout()
+                DispatchQueue.main.async {
+                    self.uiDelegate.didCallTimeout()
+                }
             }
         }
         RunLoop.main.add(callingTimeoutTimer!, forMode: .common)

@@ -15,7 +15,7 @@ open class SingleAudioCallViewController: BaseCallViewController {
     private let avatarImageView: UIImageView = {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFill
-        iv.layer.cornerRadius = 8
+        iv.layer.cornerRadius = 50
         iv.clipsToBounds = true
         iv.backgroundColor = .systemGray5
         iv.image = UIImage(systemName: "person.circle.fill")
@@ -53,7 +53,7 @@ open class SingleAudioCallViewController: BaseCallViewController {
             avatarImageView.heightAnchor.constraint(equalToConstant: 100),
             nameLabel.heightAnchor.constraint(equalToConstant: 30),
             statusLabel.heightAnchor.constraint(equalToConstant: 15),
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 180),
             stack.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
         
