@@ -348,8 +348,18 @@ public class CallManager {
             return
         }
         guard currentState == .idle else {
-            log("⚠️ 来电忙碌: 当前状态=\(currentState), 自动拒绝")
-            signalDelegate?.sendRejectResponse(toUserId: user.userId, reason: "busy") { _ in }
+            // 非空闲状态：判断是否同一通话房间
+            if currentChannel == channelName {
+                // 同一房间的重复推送（Socket 和接口都推了），通知 App 弹 Toast
+                log("同一通话重复推送: channel=\(channelName)，通知 App")
+                DispatchQueue.main.async { [weak self] in
+                    self?.uiDelegate.didReceiveDuplicateIncomingCall(from: user, callType: callType, channelName: channelName)
+                }
+            } else {
+                // 不同房间的来电，自动拒绝
+                log("⚠️ 来电忙碌: 当前状态=\(currentState), 不同房间，自动拒绝")
+                signalDelegate?.sendRejectResponse(toUserId: user.userId, reason: "busy") { _ in }
+            }
             return
         }
         

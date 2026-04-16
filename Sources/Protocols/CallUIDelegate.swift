@@ -27,6 +27,8 @@ public protocol CallUIDelegate: AnyObject {
     func didOccurError(_ error: Error)
     /// 呼叫超时（对方未接听），App 端应调用 hangUp() 挂断
     func didCallTimeout()
+    /// 收到同一通话的重复来电推送（channel 相同），App 端可弹 Toast 提示
+    func didReceiveDuplicateIncomingCall(from user: CallUser, callType: CallType, channelName: String)
     /// 远端用户视频静音状态变化
     func remoteUserDidToggleVideo(_ user: CallUser, muted: Bool)
     /// 远端用户音频静音状态变化
@@ -48,6 +50,7 @@ public extension CallUIDelegate {
     func didReceiveIncomingCall(from user: CallUser, callType: CallType, channelName: String, token: String) {}
     func didOccurError(_ error: Error) {}
     func didCallTimeout() {}
+    func didReceiveDuplicateIncomingCall(from user: CallUser, callType: CallType, channelName: String) {}
     func remoteUserDidToggleVideo(_ user: CallUser, muted: Bool) {}
     func remoteUserDidToggleAudio(_ user: CallUser, muted: Bool) {}
     func localAudioMutedDidChange(_ muted: Bool) {}

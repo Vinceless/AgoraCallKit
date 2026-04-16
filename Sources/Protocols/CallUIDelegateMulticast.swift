@@ -72,6 +72,10 @@ public final class CallUIDelegateMulticast: CallUIDelegate {
         allDelegates.forEach { $0.didCallTimeout() }
     }
     
+    public func didReceiveDuplicateIncomingCall(from user: CallUser, callType: CallType, channelName: String) {
+        allDelegates.forEach { $0.didReceiveDuplicateIncomingCall(from: user, callType: callType, channelName: channelName) }
+    }
+    
     public func remoteUserDidToggleVideo(_ user: CallUser, muted: Bool) {
         allDelegates.forEach { $0.remoteUserDidToggleVideo(user, muted: muted) }
     }

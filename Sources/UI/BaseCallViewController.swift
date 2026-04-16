@@ -288,12 +288,16 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         super.viewWillAppear(animated)
         // 注册为多播 delegate，接收 UI 回调
         callManager.uiDelegate.add(self)
+        // 禁止熄屏
+        UIApplication.shared.isIdleTimerDisabled = true
     }
     
     open override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         // 移除多播 delegate，不再接收回调
         callManager.uiDelegate.remove(self)
+        // 恢复熄屏
+        UIApplication.shared.isIdleTimerDisabled = false
     }
     
     open override func viewDidAppear(_ animated: Bool) {
@@ -341,9 +345,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         
         // 底部控制按钮
         controlStackView.addArrangedSubview(muteAudioButton)
+        controlStackView.addArrangedSubview(endCallButton)
         controlStackView.addArrangedSubview(speakerButton)
         controlStackView.addArrangedSubview(muteVideoButton)
-        controlStackView.addArrangedSubview(endCallButton)
+        
         
         callStackView.addArrangedSubview(rejectCallButton)
         callStackView.addArrangedSubview(acceptCallButton)
@@ -609,20 +614,37 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         let isVideo = callType == .video
         
         if state == .incoming {
-            // 来电时：隐藏控制按钮，只显示接听/拒绝
-            muteAudioButton.isHidden = true
-            speakerButton.isHidden = true
-            muteVideoButton.isHidden = true
-            endCallButton.isHidden = true
-            switchCameraButton.isHidden = true
-            
-            rejectCallButton.isHidden = false
-            updateButtonTitle(rejectCallButton, title: "拒绝")
-            acceptCallButton.isHidden = false
-            updateButtonTitle(acceptCallButton, title: "接听")
-            
-            controlStackView.isHidden = true
-            callStackView.isHidden = false
+            if isVideo {
+                // 视频来电：显示控制按钮，让被叫方在接听前可以设置摄像头/麦克风/扬声器
+                muteAudioButton.isHidden = false
+                speakerButton.isHidden = false
+                muteVideoButton.isHidden = false
+                endCallButton.isHidden = true
+                switchCameraButton.isHidden = true
+                
+                rejectCallButton.isHidden = false
+                updateButtonTitle(rejectCallButton, title: "拒绝")
+                acceptCallButton.isHidden = false
+                updateButtonTitle(acceptCallButton, title: "接听")
+                
+                controlStackView.isHidden = false
+                callStackView.isHidden = false
+            } else {
+                // 语音来电：隐藏控制按钮，只显示接听/拒绝
+                muteAudioButton.isHidden = true
+                speakerButton.isHidden = true
+                muteVideoButton.isHidden = true
+                endCallButton.isHidden = true
+                switchCameraButton.isHidden = true
+                
+                rejectCallButton.isHidden = false
+                updateButtonTitle(rejectCallButton, title: "拒绝")
+                acceptCallButton.isHidden = false
+                updateButtonTitle(acceptCallButton, title: "接听")
+                
+                controlStackView.isHidden = true
+                callStackView.isHidden = false
+            }
         } else if state == .calling {
             if isVideo {
                 muteAudioButton.isHidden = false
