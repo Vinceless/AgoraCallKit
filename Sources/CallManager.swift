@@ -55,6 +55,7 @@ public class CallManager {
     private var currentCallType: CallType?
     private var currentChannel: String?
     private var currentToken: String?
+    private var currentCallUUID: UUID?
     public var localUser: CallUser?
     public var currentRemoteUser: CallUser?
     
@@ -74,6 +75,9 @@ public class CallManager {
     private init() {
         engine.delegate = self
         signalListener.manager = self
+        CallKitManager.shared.delegate = self
+        // 根据 CallConfiguration 自动配置 CallKit
+        CallKitManager.shared.configure()
     }
     
     // MARK: - 声音/震动处理
@@ -370,6 +374,17 @@ public class CallManager {
         currentRemoteUser = user
         currentToken = token
         startCallingTimeout()
+        
+        // 向 CallKit 报告来电（锁屏/后台可显示系统接听界面）
+        let callUUID = UUID()
+        currentCallUUID = callUUID
+        CallKitManager.shared.reportIncomingCall(
+            uuid: callUUID,
+            handle: user.userId,
+            callerName: user.name,
+            isVideo: callType == .video
+        )
+        
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             // 通知 uiDelegate 展示来电界面（由 App 层的 AppCallUIDelegate 处理弹窗和 VC present）
@@ -447,6 +462,9 @@ public class CallManager {
             log("disconnectCall 忽略: 已是终态 \(currentState)")
             return
         }
+        // 通知 CallKit 通话结束
+        CallKitManager.shared.reportCallEnded(reason: error != nil ? .failed : .remoteEnded)
+        
         let targetState: CallState = (error != nil) ? .failed : .disconnected
         currentState = targetState
         let notify = {
@@ -493,6 +511,7 @@ public class CallManager {
         currentChannel = nil
         currentRemoteUser = nil
         currentToken = nil
+        currentCallUUID = nil
         localUser = nil
         callStartTime = nil
         remoteUsers.removeAll()
@@ -606,6 +625,8 @@ extension CallManager: AgoraEngineDelegate {
                 callStartTime = Date()
                 startDurationTimer()
             }
+            // 通知 CallKit 通话已接通
+            CallKitManager.shared.reportCallConnected()
         }
         
         if let remoteUser = currentRemoteUser, remoteUser.uid == 0 {
@@ -729,6 +750,32 @@ extension CallManager: AgoraEngineDelegate {
             }
         default:
             break
+        }
+    }
+}
+
+// MARK: - CallKitManagerDelegate
+
+extension CallManager: CallKitManagerDelegate {
+    
+    /// 用户在系统来电界面点击了接听
+    public func callKitManagerDidAcceptCall() {
+        log("CallKit: 用户接听")
+        acceptCall()
+    }
+    
+    /// 用户在系统来电界面点击了拒绝
+    public func callKitManagerDidRejectCall() {
+        log("CallKit: 用户拒绝")
+        rejectCall()
+    }
+    
+    /// 系统来电界面消失（超时等）
+    public func callKitManagerDidEndCall() {
+        log("CallKit: 来电结束")
+        // 如果还在 incoming 状态，说明用户没有在系统界面操作（可能是超时），挂断通话
+        if currentState == .incoming {
+            hangUp()
         }
     }
 }

@@ -121,6 +121,8 @@ class FloatingCallWindow: UIViewController {
     private var durationTimer: Timer?
     private var isVideoMode = false
     private var savedVideoView: UIView?
+    /// 悬浮窗模式下是否正在显示画中画（退后台时启动）
+    private var isFloatingPiPActive = false
     
     private var callManager: CallManager? { CallManager.shared }
     
@@ -129,10 +131,12 @@ class FloatingCallWindow: UIViewController {
         setupUI()
         setupGestures()
         startDurationTimer()
+        registerNotifications()
     }
     
     deinit {
         durationTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
     }
     
     func configure(with viewController: FloatingWindowCompatible) {
@@ -419,6 +423,51 @@ class FloatingCallWindow: UIViewController {
             if self?.isVideoMode == false {
                 self?.updateAudioContent()
             }
+        }
+    }
+    
+    // MARK: - 前后台通知
+    
+    private func registerNotifications() {
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationDidEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillEnterForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        if isVideoMode {
+            NotificationCenter.default.addObserver(self, selector: #selector(pipWillStart), name: .pipWillStart, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(pipDidStop), name: .pipDidStop, object: nil)
+        }
+    }
+    
+    /// 退到后台：视频通话时启动画中画，悬浮窗隐藏
+    @objc private func applicationDidEnterBackground() {
+        guard isVideoMode else { return }
+        guard !isFloatingPiPActive else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self = self else { return }
+            PictureInPictureManager.shared.start()
+        }
+    }
+    
+    /// 回到前台：停止画中画，恢复悬浮窗显示
+    @objc private func applicationWillEnterForeground() {
+        guard isVideoMode else { return }
+        if isFloatingPiPActive {
+            PictureInPictureManager.shared.stop()
+        }
+    }
+    
+    /// 画中画即将启动：隐藏悬浮窗视图（系统画中画会接管视频显示）
+    @objc private func pipWillStart() {
+        isFloatingPiPActive = true
+        view.alpha = 0
+    }
+    
+    /// 画中画停止：恢复悬浮窗显示，重新绑定远端视频到悬浮窗
+    @objc private func pipDidStop() {
+        isFloatingPiPActive = false
+        view.alpha = 1
+        // 重新绑定远端视频到悬浮窗视频视图
+        if isVideoMode, let uid = callManager?.getCurrentRemoteUser?.uid, let videoView = savedVideoView {
+            callManager?.setupRemoteVideoView(videoView, forUid: uid)
         }
     }
 }

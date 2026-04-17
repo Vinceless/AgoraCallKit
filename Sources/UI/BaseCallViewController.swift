@@ -422,12 +422,16 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     @objc private func applicationDidEnterBackground() {
         guard callType == .video, !isPictureInPictureActive else { return }
+        // 如果悬浮窗正在显示，由悬浮窗自己处理 PiP，VC 不介入
+        guard !FloatingWindowManager.shared.isShowing() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             PictureInPictureManager.shared.start()
         }
     }
     
     @objc private func applicationWillEnterForeground() {
+        // 如果悬浮窗正在显示，不要停止 PiP（悬浮窗恢复时自己处理）
+        guard !FloatingWindowManager.shared.isShowing() else { return }
         if isPictureInPictureActive {
             PictureInPictureManager.shared.stop()
         }
@@ -435,11 +439,17 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     
     @objc private func pipWillStart() {
         isPictureInPictureActive = true
-        localVideoView?.isHidden = true
+        // 只有当 VC 视图在 window 层级中时才隐藏本地视频（悬浮窗模式下 VC 已 dismiss，不应操作）
+        if view.window != nil {
+            localVideoView?.isHidden = true
+        }
     }
     
     @objc private func pipDidStop() {
         isPictureInPictureActive = false
+        // 只有当 VC 视图在 window 层级中时才恢复视频渲染
+        // （悬浮窗模式下 VC 已 dismiss，视图不在 window 中，恢复渲染会失败导致黑屏）
+        guard view.window != nil else { return }
         localVideoView?.isHidden = false
         restoreVideoViewsAfterPip()
     }
