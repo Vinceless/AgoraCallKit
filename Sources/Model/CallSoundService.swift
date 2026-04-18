@@ -247,6 +247,8 @@ public class CallSoundService {
     }
     
     private func stopRingtonePlayer() {
+        // 先将音量设为0再停止，避免 AVAudioPlayer.stop() 后缓冲区残留音频继续播放
+        ringtonePlayer?.volume = 0
         ringtonePlayer?.stop()
         ringtonePlayer = nil
     }

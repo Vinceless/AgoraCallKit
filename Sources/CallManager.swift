@@ -101,7 +101,8 @@ public class CallManager {
             soundService.stopAllSounds()
             soundService.playCallConnectedSound()
         case .disconnected:
-            // 通话挂断，播放挂断提示音
+            // 通话挂断，先停止铃声再播放挂断提示音
+            soundService.stopAllSounds()
             soundService.playCallEndedSound()
         case .failed:
             // 通话失败，停止所有声音
