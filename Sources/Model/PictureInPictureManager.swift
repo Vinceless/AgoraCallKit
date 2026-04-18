@@ -41,7 +41,7 @@ public class PictureInPictureManager: NSObject {
         let safeSize = initialSize.width > 0 && initialSize.height > 0 ? initialSize : CGSize(width: 360, height: 640)
         
         let displayLayer = AVSampleBufferDisplayLayer()
-        displayLayer.videoGravity = .resizeAspect
+        displayLayer.videoGravity = .resizeAspectFill
         displayLayer.frame = CGRect(origin: .zero, size: safeSize)
         self.sampleBufferDisplayLayer = displayLayer
         
