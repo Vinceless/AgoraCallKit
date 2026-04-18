@@ -210,9 +210,9 @@ public class CallManager {
                 self.currentToken = token
                 self.log("获取 Token 成功, 加入频道...")
                 let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
-                if success {
-                    self.currentState = .connecting
-                } else {
+                // 主叫加入频道后保持 .calling 状态，继续播放呼叫等待音
+                // 状态会在对方接听时变为 .connecting → .connected
+                if !success {
                     self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
                     self.failWithError("加入频道失败")
                 }
@@ -604,7 +604,9 @@ extension CallManager: AgoraEngineDelegate {
         }
         // 本地加入频道只更新状态，不开始计时
         // 计时在远端用户加入时开始
-        if currentState == .calling || currentState == .incoming {
+        // 被叫加入频道后从 .incoming 变为 .connecting（停止来电铃声）
+        // 主叫加入频道后仍保持 .calling（继续播放呼叫等待音，直到对方接听）
+        if currentState == .incoming {
             currentState = .connecting
         }
     }
@@ -731,12 +733,16 @@ extension CallManager: AgoraEngineDelegate {
         log("引擎回调: 连接状态变化 state=\(state.rawValue)")
         switch state {
         case .connecting:
-            if currentState == .calling || currentState == .incoming {
+            // 被叫：加入频道后从 .incoming → .connecting（停止来电铃声）
+            // 主叫：保持 .calling 状态（继续播放呼叫等待音，直到对方接听）
+            if currentState == .incoming {
                 currentState = .connecting
             }
         case .connected:
-            // 引擎连接成功，推进到 .connecting（.connected 只在远端用户加入时才设置）
-            if currentState == .calling || currentState == .incoming {
+            // 引擎连接成功
+            // 被叫：.incoming → .connecting
+            // 主叫：保持 .calling，等待对方接听信令
+            if currentState == .incoming {
                 currentState = .connecting
             }
         case .reconnecting:
