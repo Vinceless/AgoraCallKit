@@ -195,7 +195,7 @@ class FloatingCallWindow: UIViewController {
         callButton.setImage(UIImage(systemName: "phone.fill"), for: .normal)
         callButton.tintColor = greenColor
         callButton.backgroundColor = .clear
-        callButton.addTarget(self, action: #selector(callButtonTapped), for: .touchUpInside)
+        callButton.isUserInteractionEnabled = false
         
         // 通话时长标签（绿色文字）
         durationLabel = UILabel()
@@ -411,10 +411,6 @@ class FloatingCallWindow: UIViewController {
         let view = savedVideoView
         savedVideoView = nil
         return view
-    }
-    
-    @objc private func callButtonTapped() {
-        callManager?.acceptCall()
     }
     
     private func startDurationTimer() {

@@ -49,6 +49,7 @@ public class PictureInPictureManager: NSObject {
         renderView.layer.addSublayer(displayLayer)
         renderView.isUserInteractionEnabled = false
         renderView.backgroundColor = .clear
+        renderView.contentMode = .scaleAspectFill
         renderView.alpha = 0.01  // 几乎不可见但系统认为可见，PiP 需要
         pipRenderView = renderView
         
@@ -200,7 +201,7 @@ extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
         print("[PiP] Failed to start with error: \(error.localizedDescription)")
     }
     
-    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         print("[PiP] Restore user interface requested, isInCall=\(isInCall)")
         if !isInCall {
             // 通话已结束，不需要恢复界面，直接停止画中画
