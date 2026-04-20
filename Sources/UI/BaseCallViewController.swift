@@ -64,23 +64,23 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     // MARK: - 底部按钮（微信风格：圆形背景图 + 图标 + 底部文字）
     
     public lazy var muteAudioButton: UIButton = createActionButton(
-        imageName: "mic.fill", title: "麦克风",
-        bgColor: .white.withAlphaComponent(0.2),
-        selectedBgColor: .white,
-        tintColor: .white,
-        selectedTintColor: .darkGray
+        imageName: "mic.fill", title: "麦克风已开",
+        bgColor: .white,
+        selectedBgColor: .white.withAlphaComponent(0.2),
+        tintColor: .darkGray,
+        selectedTintColor: .white
     )
     
     public lazy var muteVideoButton: UIButton = createActionButton(
-        imageName: "video.fill", title: "摄像头",
-        bgColor: .white.withAlphaComponent(0.2),
-        selectedBgColor: .white,
-        tintColor: .white,
-        selectedTintColor: .darkGray
+        imageName: "video.fill", title: "摄像头已开",
+        bgColor: .white,
+        selectedBgColor: .white.withAlphaComponent(0.2),
+        tintColor: .darkGray,
+        selectedTintColor: .white
     )
     
     public lazy var speakerButton: UIButton = createActionButton(
-        imageName: "speaker.wave.2.fill", title: "扬声器",
+        imageName: "speaker.wave.2.fill", title: "扬声器已关",
         bgColor: .white.withAlphaComponent(0.2),
         selectedBgColor: .white,
         tintColor: .white,
@@ -94,7 +94,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     )
     
     public lazy var endCallButton: UIButton = createCallButton(
-        imageName: "phone.down.fill", title: "挂断",
+        imageName: "phone.down.fill", title: "挂断",  icsize: 32,
         bgColor: UIColor(hex: "F55C5C")
     )
     
@@ -104,7 +104,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     )
     
     public lazy var rejectCallButton: UIButton = createCallButton(
-        imageName: "phone.down.fill", title: "挂断",
+        imageName: "phone.down.fill", title: "挂断", icsize: 32,
         bgColor: UIColor(hex: "F55C5C")
     )
     
@@ -151,13 +151,15 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             // 画圆形背景
             bgColor.setFill()
             context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
+            
             // 画居中图标
             let icon = UIImage(systemName: iconName)!
+            let height = iconSize * icon.size.height/icon.size.width
             let iconRect = CGRect(
                 x: (size - iconSize) / 2,
-                y: (size - iconSize) / 2,
+                y: (size - height) / 2,
                 width: iconSize,
-                height: iconSize
+                height: height
             )
             let tinted = icon.withTintColor(iconColor, renderingMode: .alwaysOriginal)
             tinted.draw(in: iconRect)
@@ -171,10 +173,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     private func createActionButton(
         imageName: String,
         title: String,
-        bgColor: UIColor = .white.withAlphaComponent(0.2),
-        selectedBgColor: UIColor = .white,
-        tintColor: UIColor = .white,
-        selectedTintColor: UIColor = .darkGray
+        bgColor: UIColor = .white,
+        selectedBgColor: UIColor = .white.withAlphaComponent(0.2),
+        tintColor: UIColor = .darkGray,
+        selectedTintColor: UIColor = .white
     ) -> UIButton {
         let normalImage = circleImage(
             size: buttonSize,
@@ -195,8 +197,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         btn.setImage(normalImage, for: .normal)
         btn.setImage(selectedImage, for: .selected)
         btn.setTitle(title, for: .normal)
-        btn.setTitleColor(tintColor.withAlphaComponent(0.8), for: .normal)
-        btn.setTitleColor(selectedTintColor.withAlphaComponent(0.8), for: .selected)
+//        btn.setTitleColor(tintColor.withAlphaComponent(0.8), for: .normal)
+//        btn.setTitleColor(selectedTintColor.withAlphaComponent(0.8), for: .selected)
+        btn.setTitleColor(.white, for: .normal)
+        btn.setTitleColor(.white, for: .selected)
         btn.titleLabel?.font = .systemFont(ofSize: 11)
         btn.translatesAutoresizingMaskIntoConstraints = false
         
@@ -216,8 +220,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
                 let isSelected = button.isSelected
                 updatedConfig?.image = isSelected ? selectedImage : normalImage
                 updatedConfig?.title = button.titleLabel?.text
-                let color = isSelected ? selectedTintColor.withAlphaComponent(0.8) : tintColor.withAlphaComponent(0.8)
-                updatedConfig?.baseForegroundColor = color
+//                let color = isSelected ? selectedTintColor : tintColor
+                updatedConfig?.baseForegroundColor = .white
                 button.configuration = updatedConfig
             }
         } else {
@@ -235,20 +239,21 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     private func createCallButton(
         imageName: String,
         title: String,
+        icsize: CGFloat? = nil,
         bgColor: UIColor
     ) -> UIButton {
         let normalImage = circleImage(
             size: buttonSize,
             bgColor: bgColor,
             iconName: imageName,
-            iconSize: buttonIconSize,
+            iconSize: icsize ?? buttonIconSize,
             iconColor: .white
         )
         
         let btn = UIButton(type: .custom)
         btn.setImage(normalImage, for: .normal)
         btn.setTitle(title, for: .normal)
-        btn.setTitleColor(.white.withAlphaComponent(0.9), for: .normal)
+        btn.setTitleColor(.white, for: .normal)
         btn.titleLabel?.font = .systemFont(ofSize: 12)
         btn.translatesAutoresizingMaskIntoConstraints = false
         
@@ -258,7 +263,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             config.title = title
             config.imagePlacement = .top
             config.imagePadding = 6
-            config.baseForegroundColor = .white.withAlphaComponent(0.9)
+            config.baseForegroundColor = .white
             config.baseBackgroundColor = .clear
             config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
             btn.configuration = config
@@ -470,7 +475,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         muteAudioButton.isSelected = newState
         updateToggleButton(muteAudioButton, isMuted: newState,
                            onImage: "mic.fill", offImage: "mic.slash.fill",
-                           onTitle: "麦克风", offTitle: "已静音")
+                           onTitle: "麦克风已开", offTitle: "麦克风已关")
     }
     
     @objc open func toggleVideo() {
@@ -480,7 +485,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         muteVideoButton.isSelected = newState
         updateToggleButton(muteVideoButton, isMuted: newState,
                            onImage: "video.fill", offImage: "video.slash.fill",
-                           onTitle: "摄像头", offTitle: "已关闭")
+                           onTitle: "摄像头已开", offTitle: "摄像头已关")
     }
     
     @objc open func toggleSpeaker() {
@@ -490,19 +495,19 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
         speakerButton.isSelected = newState
         updateToggleButton(speakerButton, isMuted: newState,
                            onImage: "speaker.wave.2.fill", offImage: "speaker.fill",
-                           onTitle: "扬声器", offTitle: "免提")
+                           onTitle: "扬声器已关", offTitle: "扬声器已开")
     }
     
     /// 更新功能按钮的图标和文字（选中时自动切换圆形背景图）
     private func updateToggleButton(_ button: UIButton, isMuted: Bool, onImage: String, offImage: String, onTitle: String, offTitle: String) {
         let iconName = isMuted ? offImage : onImage
         let title = isMuted ? offTitle : onTitle
+        let tintColor: UIColor = isMuted ? .white : .darkGray
+        let bgColor: UIColor = isMuted ? .white.withAlphaComponent(0.2) : .white
         
         if #available(iOS 15.0, *) {
             // configurationUpdateHandler 会自动根据 isSelected 切换图片和颜色
             // 只需更新 icon 名称和 title，重新生成图片
-            let tintColor: UIColor = isMuted ? .darkGray : .white
-            let bgColor: UIColor = isMuted ? .white : .white.withAlphaComponent(0.2)
             let newSize = buttonSize
             let newIconSize = buttonIconSize
             
@@ -516,12 +521,10 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             if var config = button.configuration {
                 config.image = newImage
                 config.title = title
-                config.baseForegroundColor = tintColor.withAlphaComponent(0.8)
+                config.baseForegroundColor = .white
                 button.configuration = config
             }
         } else {
-            let tintColor: UIColor = isMuted ? .darkGray : .white
-            let bgColor: UIColor = isMuted ? .white : .white.withAlphaComponent(0.2)
             let newImage = circleImage(
                 size: buttonSize,
                 bgColor: bgColor,
@@ -531,7 +534,7 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             )
             button.setImage(newImage, for: .normal)
             button.setTitle(title, for: .normal)
-            button.setTitleColor(tintColor.withAlphaComponent(0.8), for: .normal)
+            button.setTitleColor(.white, for: .normal)
         }
     }
     
