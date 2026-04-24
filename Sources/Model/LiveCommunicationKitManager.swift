@@ -13,15 +13,15 @@ import AVFoundation
 /// LiveCommunicationKit 事件委托
 public protocol LiveCommunicationKitManagerDelegate: AnyObject {
     /// 用户点击了接听
-    func liveCommunicationKitDidAcceptCall()
+    func liveCommunicationKitDidAcceptCall(uuid: UUID)
     /// 用户点击了拒绝
-    func liveCommunicationKitDidRejectCall()
+    func liveCommunicationKitDidRejectCall(uuid: UUID)
     /// 通话超时未接听
-    func liveCommunicationKitDidTimeout()
+    func liveCommunicationKitDidTimeout(uuid: UUID)
 }
 
 /// LiveCommunicationKit 管理器（iOS 17.4+）
-/// 用于替代 CallKit，提供更简单的 VoIP 来电界面
+/// 用于替代 CallKit，提供更简洁的 VoIP 来电界面
 /// LiveCommunicationKit 优势：
 /// - 不需要配置 CXProvider，避免审核风险
 /// - 界面更简洁，适合简单的一对一通话场景
@@ -33,8 +33,11 @@ public class LiveCommunicationKitManager: NSObject {
     
     public weak var delegate: LiveCommunicationKitManagerDelegate?
     
-    /// 当前通话的请求对象
-    private var currentRequest: LCVideoCallRequest?
+    /// ConversationManager 实例
+    private var conversationManager: ConversationManager?
+    
+    /// 当前通话的 Conversation
+    private var currentConversation: Conversation?
     
     /// 当前通话的 UUID
     private var currentCallUUID: UUID?
@@ -49,10 +52,48 @@ public class LiveCommunicationKitManager: NSObject {
     // MARK: - 配置检查
     
     /// 检查是否应该使用 LiveCommunicationKit
-    /// - 注意：只要 isLiveCommunicationKitEnabled = true，iOS 17.4+ 就会使用 LiveCommunicationKit
-    /// - isCallKitEnabled 仅在 iOS < 17.4 时作为 CallKit 的回退开关
     public static var isEnabled: Bool {
         return CallConfiguration.shared.isLiveCommunicationKitEnabled
+    }
+    
+    // MARK: - 初始化
+    
+    /// 配置并创建 ConversationManager
+    public func configure() {
+        guard LiveCommunicationKitManager.isEnabled else {
+            print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过配置")
+            return
+        }
+        
+        // 创建配置
+        var config = ConversationManager.Configuration(
+            ringtoneName: nil,
+            iconTemplateImageData: nil,
+            maximumConversationGroups: 1,
+            maximumConversationsPerConversationGroup: 1,
+            includesConversationInRecents: true,
+            supportsVideo: true,
+            supportedHandleTypes: [.generic]
+        )
+        
+        // 配置铃声（复用 CallSoundService）
+        if let ringtoneSound = CallConfiguration.shared.callKitRingtoneSound {
+            config.ringtoneName = ringtoneSound
+        } else if let incomingPath = CallSoundService.shared.incomingRingtonePath {
+            config.ringtoneName = (incomingPath as NSString).lastPathComponent
+        }
+        
+        // 配置图标
+        if let iconName = CallConfiguration.shared.callKitIconName,
+           let imageData = UIImage(named: iconName)?.pngData() {
+            config.iconTemplateImageData = imageData
+        }
+        
+        // 创建 ConversationManager
+        conversationManager = ConversationManager(configuration: config)
+        conversationManager?.delegate = self
+        
+        print("[LiveCommunicationKitManager] ConversationManager 配置完成")
     }
     
     // MARK: - 报告来电
@@ -62,72 +103,34 @@ public class LiveCommunicationKitManager: NSObject {
     ///   - uuid: 通话唯一标识
     ///   - callerName: 主叫方名称
     ///   - isVideo: 是否为视频通话
-    ///   - update: 可选的更新回调（用于更新来电界面信息）
-    public func reportIncomingCall(uuid: UUID, callerName: String, isVideo: Bool, update: ((LCUpdate) -> Void)? = nil) {
+    public func reportIncomingCall(uuid: UUID, callerName: String, isVideo: Bool) {
         guard LiveCommunicationKitManager.isEnabled else {
             print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过报告来电")
             return
         }
         
+        guard let conversationManager = conversationManager else {
+            print("[LiveCommunicationKitManager] ConversationManager 未初始化，请先调用 configure()")
+            return
+        }
+        
         currentCallUUID = uuid
         
-        let updateObj = LCUpdate()
-        updateObj.update = { update in
-            update.callerName = callerName
-            update.hasVideo = isVideo
-            // 设置图标（如果有配置）
-            if let iconName = CallConfiguration.shared.callKitIconName,
-               let imageData = UIImage(named: iconName)?.pngData() {
-                update.iconData = imageData
-            }
-            // 设置铃声（复用 CallSoundService 配置）
-            if let ringtoneSound = CallConfiguration.shared.callKitRingtoneSound {
-                update.ringtoneSoundName = ringtoneSound
-            } else if let incomingPath = CallSoundService.shared.incomingRingtonePath {
-                update.ringtoneSoundName = (incomingPath as NSString).lastPathComponent
-            }
-            // 调用自定义更新逻辑
-            update?(update)
-        }
+        // 创建 Handle 表示来电者
+        let handle = Handle(type: .generic, value: callerName, displayName: callerName)
         
-        let request = LCVideoCallRequest(uuid: uuid, update: updateObj)
-        request.isVideo = isVideo
+        // 创建 Update 配置来电信息
+        var update = Conversation.Update()
+        update.members = [handle]
         
-        currentRequest = request
-        
-        // 显示来电界面
-        request.present { [weak self] error in
-            if let error = error {
-                print("[LiveCommunicationKitManager] 显示来电界面失败: \(error.localizedDescription)")
-                self?.currentCallUUID = nil
-                self?.currentRequest = nil
-            } else {
+        // 报告新来电
+        Task {
+            do {
+                try await conversationManager.reportNewIncomingConversation(uuid: uuid, update: update)
                 print("[LiveCommunicationKitManager] 来电界面已显示: \(callerName)")
-                self?.isShowingIncomingCall = true
-            }
-        }
-    }
-    
-    /// 更新来电界面信息（如头像、昵称等）
-    public func updateIncomingCall(callerName: String? = nil, hasVideo: Bool? = nil, avatarData: Data? = nil) {
-        guard isShowingIncomingCall, let uuid = currentCallUUID else { return }
-        
-        let update = LCUpdate()
-        update.update = { update in
-            if let name = callerName {
-                update.callerName = name
-            }
-            if let video = hasVideo {
-                update.hasVideo = video
-            }
-            if let data = avatarData {
-                update.iconData = data
-            }
-        }
-        
-        LCVideoCallRequest.updateIncomingCall(for: uuid, with: update) { error in
-            if let error = error {
-                print("[LiveCommunicationKitManager] 更新来电界面失败: \(error.localizedDescription)")
+                self.isShowingIncomingCall = true
+            } catch {
+                print("[LiveCommunicationKitManager] 报告来电失败: \(error.localizedDescription)")
             }
         }
     }
@@ -136,32 +139,40 @@ public class LiveCommunicationKitManager: NSObject {
     
     /// 报告通话已接通
     public func reportCallConnected() {
-        guard isShowingIncomingCall, let uuid = currentCallUUID else { return }
-        
-        LCVideoCallRequest.reportOutgoingCall(for: uuid, connectedAt: Date()) { error in
-            if let error = error {
-                print("[LiveCommunicationKitManager] 报告通话接通失败: \(error.localizedDescription)")
-            } else {
-                print("[LiveCommunicationKitManager] 通话已接通")
-            }
+        guard let conversation = currentConversation else {
+            print("[LiveCommunicationKitManager] 当前没有通话，无法报告接通")
+            return
         }
-        isShowingIncomingCall = false
+        
+        let event = Conversation.Event.conversationConnected(Date())
+        conversationManager?.reportConversationEvent(event, for: conversation)
+        print("[LiveCommunicationKitManager] 通话已接通")
     }
     
     /// 报告通话已结束
     public func reportCallEnded(reason: String = "ended") {
-        guard let uuid = currentCallUUID else { return }
-        
-        LCVideoCallRequest.endCall(for: uuid) { [weak self] error in
-            if let error = error {
-                print("[LiveCommunicationKitManager] 报告通话结束失败: \(error.localizedDescription)")
-            } else {
-                print("[LiveCommunicationKitManager] 通话已结束: \(reason)")
-            }
-            self?.currentCallUUID = nil
-            self?.currentRequest = nil
-            self?.isShowingIncomingCall = false
+        guard let conversation = currentConversation else {
+            print("[LiveCommunicationKitManager] 当前没有通话，无法报告结束")
+            return
         }
+        
+        let endedReason: Conversation.EndedReason
+        switch reason {
+        case "failed":
+            endedReason = .failed
+        case "remoteEnded":
+            endedReason = .remoteEnded
+        default:
+            endedReason = .unanswered
+        }
+        
+        let event = Conversation.Event.conversationEnded(Date(), endedReason)
+        conversationManager?.reportConversationEvent(event, for: conversation)
+        print("[LiveCommunicationKitManager] 通话已结束: \(reason)")
+        
+        // 清理状态
+        currentConversation = nil
+        isShowingIncomingCall = false
     }
     
     // MARK: - 主动操作
@@ -179,33 +190,70 @@ public class LiveCommunicationKitManager: NSObject {
     /// 标记为已拒绝
     public func markCallRejected() {
         isShowingIncomingCall = false
+        currentConversation = nil
         currentCallUUID = nil
-        currentRequest = nil
     }
 }
 
-// MARK: - LCVideoCallRequestDelegate
+// MARK: - ConversationManagerDelegate
 
 @available(iOS 17.4, *)
-extension LiveCommunicationKitManager: LCVideoCallRequestDelegate {
+extension LiveCommunicationKitManager: ConversationManagerDelegate {
     
-    public func videoCallRequestDidAccept(_ request: LCVideoCallRequest) {
-        print("[LiveCommunicationKitManager] 用户点击了接听")
-        isShowingIncomingCall = false
-        delegate?.liveCommunicationKitDidAcceptCall()
+    /// Conversation 开始
+    public func conversationManagerDidBegin(_ manager: ConversationManager) {
+        print("[LiveCommunicationKitManager] ConversationManager 开始")
     }
     
-    public func videoCallRequestDidReject(_ request: LCVideoCallRequest) {
-        print("[LiveCommunicationKitManager] 用户点击了拒绝")
+    /// ConversationManager 重置
+    public func conversationManagerDidReset(_ manager: ConversationManager) {
+        print("[LiveCommunicationKitManager] ConversationManager 重置")
+        currentConversation = nil
         isShowingIncomingCall = false
-        delegate?.liveCommunicationKitDidRejectCall()
     }
     
-    public func videoCallRequest(_ request: LCVideoCallRequest, didNotRespond reason: LCVideoCallRequest.DidNotRespondReason) {
-        print("[LiveCommunicationKitManager] 用户未响应: \(reason.rawValue)")
-        isShowingIncomingCall = false
-        currentCallUUID = nil
-        currentRequest = nil
-        delegate?.liveCommunicationKitDidTimeout()
+    /// Conversation 变化
+    public func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation) {
+        print("[LiveCommunicationKitManager] Conversation 变化: \(conversation.state)")
+        currentConversation = conversation
+    }
+    
+    /// 需要执行 Action
+    public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
+        print("[LiveCommunicationKitManager] 执行 Action: \(type(of: action)), uuid=\(action.uuid)")
+        
+        // 根据 Action 类型处理
+        if action is JoinConversationAction {
+            // 用户点击了接听
+            delegate?.liveCommunicationKitDidAcceptCall(uuid: action.uuid)
+            action.fulfill()
+        } else if action is EndConversationAction {
+            // 用户点击了拒绝或结束通话
+            if action.state == .running {
+                delegate?.liveCommunicationKitDidRejectCall(uuid: action.uuid)
+            }
+            action.fulfill()
+        } else if action is MuteConversationAction {
+            action.fulfill()
+        } else if action is PauseConversationAction {
+            action.fulfill()
+        }
+    }
+    
+    /// Action 超时
+    public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
+        print("[LiveCommunicationKitManager] Action 超时: \(type(of: action))")
+        delegate?.liveCommunicationKitDidTimeout(uuid: action.uuid)
+        action.fail()
+    }
+    
+    /// 音频会话激活
+    public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+        print("[LiveCommunicationKitManager] 音频会话激活")
+    }
+    
+    /// 音频会话停用
+    public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+        print("[LiveCommunicationKitManager] 音频会话停用")
     }
 }

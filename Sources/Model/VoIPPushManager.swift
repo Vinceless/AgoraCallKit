@@ -8,6 +8,7 @@
 
 import Foundation
 import PushKit
+import Combine
 
 /// VoIP 推送 payload 解析代理，由 App 层实现
 /// SDK 收到原始推送后，调用此代理让 App 将业务 payload 转换为 CallIncomingInfo
@@ -53,8 +54,8 @@ public class VoIPPushManager: NSObject {
     /// App 层实现的 payload 解析代理
     public weak var payloadDelegate: VoIPPushPayloadDelegate?
     
-    /// VoIP 设备 Token（上报给服务端用于推送）
-    public private(set) var voipToken: Data?
+    /// VoIP Token 发布器（Data 类型，用于极光推送等）
+    public let voipTokenPublisher = CurrentValueSubject<Data, Never>(Data())
     
     /// PushKit 注册对象（需强引用保持存活）
     private var pushRegistry: PKPushRegistry?
@@ -89,9 +90,8 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     
     /// VoIP Token 更新
     public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
-        voipToken = pushCredentials.token
-        let tokenString = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
-        print("[VoIPPushManager] VoIP Token 更新: \(tokenString)")
+        voipTokenPublisher.send(pushCredentials.token)
+        print("[VoIPPushManager] VoIP Token 更新")
     }
     
     /// 收到 VoIP 推送
@@ -103,7 +103,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
         lastPayload = payload.dictionaryPayload
         
         guard type == .voIP else {
-            completion()
+            completion()    /// 无论成功与否，都必须调用 completion()。如果不调用，系统会认为你的 App 没有正确处理这个推送，然后会"惩罚"——禁止 App 在后台或强制退出状态下继续接收 PushKit 通知
             return
         }
         
@@ -128,7 +128,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     /// VoIP 推送处理失败
     public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         print("[VoIPPushManager] VoIP Token 失效")
-        voipToken = nil
+        voipTokenPublisher.send(Data())
     }
     
     // MARK: - 内部处理
