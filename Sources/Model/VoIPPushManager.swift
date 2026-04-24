@@ -59,6 +59,9 @@ public class VoIPPushManager: NSObject {
     /// PushKit 注册对象（需强引用保持存活）
     private var pushRegistry: PKPushRegistry?
     
+    /// 最后一次收到的推送 payload（用于调试和状态追踪）
+    private var lastPayload: [AnyHashable: Any]?
+    
     private override init() {
         super.init()
     }
@@ -70,6 +73,13 @@ public class VoIPPushManager: NSObject {
         registry.desiredPushTypes = [.voIP]
         self.pushRegistry = registry
         print("[VoIPPushManager] 已注册 PushKit VoIP 推送")
+    }
+    
+    /// 清除最后一次推送的 payload 记录
+    /// - 说明：通话结束后调用，重置推送状态
+    public func clearLastPayload() {
+        lastPayload = nil
+        print("[VoIPPushManager] 已清除推送记录")
     }
 }
 
@@ -85,8 +95,12 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     }
     
     /// 收到 VoIP 推送
-    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: [AnyHashable: Any], for type: PKPushType, completion: @escaping () -> Void) {
+    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping @Sendable () -> Void) {
+//    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: [AnyHashable: Any], for type: PKPushType, completion: @escaping () -> Void) {
         print("[VoIPPushManager] 收到 VoIP 推送: \(payload)")
+        
+        // 保存推送记录
+        lastPayload = payload.dictionaryPayload
         
         guard type == .voIP else {
             completion()
@@ -95,7 +109,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
         
         // 将原始 payload 交给 App 层解析
         if let payloadDelegate = payloadDelegate {
-            payloadDelegate.voipPushManager(didReceivePayload: payload) { [weak self] info in
+            payloadDelegate.voipPushManager(didReceivePayload: payload.dictionaryPayload) { [weak self] info in
                 guard let self = self else { completion(); return }
                 if let info = info {
                     // 解析成功，交给 CallManager 处理来电

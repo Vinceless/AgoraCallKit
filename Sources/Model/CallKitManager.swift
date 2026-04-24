@@ -67,8 +67,22 @@ public class CallKitManager: NSObject {
             configuration.iconTemplateImageData = UIImage(named: iconName)?.pngData()
         }
         
-        // 来电铃声使用默认系统铃声（CallSoundService 会单独处理震动）
-        configuration.ringtoneSound = nil
+        // 配置来电铃声：
+        // 优先级：CallConfiguration.callKitRingtoneSound > CallSoundService.incomingRingtonePath > 系统默认
+        if let ringtoneSound = CallConfiguration.shared.callKitRingtoneSound {
+            // 显式配置的铃声
+            configuration.ringtoneSound = ringtoneSound
+            print("[CallKitManager] 使用显式配置的铃声: \(ringtoneSound)")
+        } else if let incomingPath = CallSoundService.shared.incomingRingtonePath {
+            // 复用 CallSoundService 的来电铃声（从完整路径提取文件名）
+            let ringtoneName = (incomingPath as NSString).lastPathComponent
+            configuration.ringtoneSound = ringtoneName
+            print("[CallKitManager] 复用 CallSoundService 铃声: \(ringtoneName)")
+        } else {
+            // 使用系统默认铃声
+            configuration.ringtoneSound = nil
+            print("[CallKitManager] 使用系统默认来电铃声")
+        }
         
         let provider = CXProvider(configuration: configuration)
         provider.setDelegate(self, queue: nil)

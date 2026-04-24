@@ -1,6 +1,7 @@
 PODS:
   - AgoraCallKit (0.0.1):
     - AgoraRtcEngine_iOS
+    - Kingfisher
   - AgoraInfra_iOS (1.3.5)
   - AgoraRtcEngine_iOS (4.6.2):
     - AgoraRtcEngine_iOS/AIAEC (= 4.6.2)
@@ -38,6 +39,7 @@ PODS:
   - AgoraRtcEngine_iOS/VideoCodecEnc (4.6.2)
   - AgoraRtcEngine_iOS/VirtualBackground (4.6.2)
   - AgoraRtcEngine_iOS/VQA (4.6.2)
+  - Kingfisher (7.12.0)
 
 DEPENDENCIES:
   - AgoraCallKit (from `../`)
@@ -46,15 +48,17 @@ SPEC REPOS:
   trunk:
     - AgoraInfra_iOS
     - AgoraRtcEngine_iOS
+    - Kingfisher
 
 EXTERNAL SOURCES:
   AgoraCallKit:
     :path: "../"
 
 SPEC CHECKSUMS:
-  AgoraCallKit: 58f02108c748508da308366b6823800d855e2896
+  AgoraCallKit: 4945c596e55f1b2281b09d101336c0fbded7ca40
   AgoraInfra_iOS: 0bf927aad4fc425b24ca5d094b333361960f5cb0
   AgoraRtcEngine_iOS: 11f37dd846d6194a5268b084b99102e5b6aff0de
+  Kingfisher: 53a10ea35051a436b5fb626ca2dd8f3144d755e9
 
 PODFILE CHECKSUM: 03e7acd32afabae9381161bee69550759587daef
 
