@@ -19,6 +19,8 @@ public protocol CallKitManagerDelegate: AnyObject {
     func callKitManagerDidRejectCall()
     /// 系统来电界面消失（未接听超时等）
     func callKitManagerDidEndCall()
+    /// Provider 被系统重置
+    func callKitManagerDidReset()
 }
 
 /// CallKit 管理器：向系统报告来电、管理通话生命周期
@@ -95,9 +97,11 @@ public class CallKitManager: NSObject {
     
     /// 向系统报告收到来电（收到 VoIP 推送后调用）
     /// 若 CallKit 未启用则静默忽略，App 通过 uiDelegate 处理来电即可
-    public func reportIncomingCall(uuid: UUID, handle: String, callerName: String, isVideo: Bool) {
+    public func reportIncomingCall(uuid: UUID, handle: String, callerName: String, isVideo: Bool,
+                                   completion: @escaping (Bool) -> Void) {
         guard CallConfiguration.shared.isCallKitEnabled else {
             print("[CallKitManager] CallKit 未启用，跳过报告来电")
+            completion(false)
             return
         }
         
@@ -116,9 +120,11 @@ public class CallKitManager: NSObject {
             if let error = error {
                 print("[CallKitManager] 报告来电失败: \(error.localizedDescription)")
                 self?.currentCallUUID = nil
+                completion(false)
             } else {
                 print("[CallKitManager] 系统来电界面已显示: \(callerName)")
                 self?.isShowingIncomingCall = true
+                completion(true)
             }
         }
     }
@@ -207,6 +213,7 @@ extension CallKitManager: CXProviderDelegate {
         print("[CallKitManager] Provider 被系统重置")
         isShowingIncomingCall = false
         currentCallUUID = nil
+        delegate?.callKitManagerDidReset()   // 通知 CallManager 强制结束通话
     }
     
     /// 超时未接听

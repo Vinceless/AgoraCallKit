@@ -107,21 +107,27 @@ extension VoIPPushManager: PKPushRegistryDelegate {
             return
         }
         
-        // 将原始 payload 交给 App 层解析
-        if let payloadDelegate = payloadDelegate {
-            payloadDelegate.voipPushManager(didReceivePayload: payload.dictionaryPayload) { [weak self] info in
-                guard let self = self else { completion(); return }
-                if let info = info {
-                    // 解析成功，交给 CallManager 处理来电
-                    self.handleIncomingCall(info: info)
-                } else {
-                    print("[VoIPPushManager] ⚠️ App 解析 payload 返回 nil，忽略此推送")
+        guard let payloadDelegate = payloadDelegate else {
+                    print("[VoIPPushManager] ⚠️ 未设置 payloadDelegate，无法解析推送")
+                    completion()
+                    return
                 }
+        
+        payloadDelegate.voipPushManager(didReceivePayload: payload.dictionaryPayload) { [weak self] info in
+            guard let self = self else { completion(); return }
+            if let info = info {
+                // 解析成功，交给 CallManager 处理来电
+                self.handleIncomingCall(info: info) { success in
+                                    if !success {
+                                        print("[VoIPPushManager] ⚠️ 系统来电界面显示失败")
+                                    }
+                                    completion()
+                                }
+            } else {
+                print("[VoIPPushManager] ⚠️ App 解析 payload 返回 nil，忽略此推送")
                 completion()
             }
-        } else {
-            print("[VoIPPushManager] ⚠️ 未设置 payloadDelegate，无法解析推送")
-            completion()
+            
         }
     }
     
@@ -134,7 +140,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     // MARK: - 内部处理
     
     /// 将解析后的来电信息交给 CallManager 处理
-    private func handleIncomingCall(info: CallIncomingInfo) {
+    private func handleIncomingCall(info: CallIncomingInfo, completion: @escaping (Bool) -> Void) {
         let remoteUser = CallUser(
             userId: info.fromUserId,
             uid: UInt(info.fromUserId) ?? 0,
@@ -146,7 +152,8 @@ extension VoIPPushManager: PKPushRegistryDelegate {
             from: remoteUser,
             channelName: info.channelName,
             token: info.token,
-            callType: info.callType
+            callType: info.callType,
+            systemUICompletion: completion
         )
     }
 }

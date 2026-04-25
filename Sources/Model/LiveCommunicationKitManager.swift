@@ -13,11 +13,13 @@ import AVFoundation
 /// LiveCommunicationKit 事件委托
 public protocol LiveCommunicationKitManagerDelegate: AnyObject {
     /// 用户点击了接听
-    func liveCommunicationKitDidAcceptCall(uuid: UUID)
+    func liveCommunicationKitDidAcceptCall(uuid: UUID, completion: @escaping (Bool) -> Void)
     /// 用户点击了拒绝
     func liveCommunicationKitDidRejectCall(uuid: UUID)
     /// 通话超时未接听
     func liveCommunicationKitDidTimeout(uuid: UUID)
+    /// 重置
+    func liveCommunicationKitDidReset()
 }
 
 /// LiveCommunicationKit 管理器（iOS 17.4+）
@@ -44,6 +46,8 @@ public class LiveCommunicationKitManager: NSObject {
     
     /// 是否正在显示来电界面
     public private(set) var isShowingIncomingCall = false
+    
+    private var pendingAction: ConversationAction?  // 存储待处理的 Action，用于延迟 fulfill
     
     private override init() {
         super.init()
@@ -103,14 +107,17 @@ public class LiveCommunicationKitManager: NSObject {
     ///   - uuid: 通话唯一标识
     ///   - callerName: 主叫方名称
     ///   - isVideo: 是否为视频通话
-    public func reportIncomingCall(uuid: UUID, callerName: String, isVideo: Bool) {
+    public func reportIncomingCall(uuid: UUID, callerName: String, isVideo: Bool,
+                                   completion: @escaping (Bool) -> Void) {
         guard LiveCommunicationKitManager.isEnabled else {
             print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过报告来电")
+            completion(false)
             return
         }
         
         guard let conversationManager = conversationManager else {
             print("[LiveCommunicationKitManager] ConversationManager 未初始化，请先调用 configure()")
+            completion(false)
             return
         }
         
@@ -129,8 +136,10 @@ public class LiveCommunicationKitManager: NSObject {
                 try await conversationManager.reportNewIncomingConversation(uuid: uuid, update: update)
                 print("[LiveCommunicationKitManager] 来电界面已显示: \(callerName)")
                 self.isShowingIncomingCall = true
+                completion(true)
             } catch {
                 print("[LiveCommunicationKitManager] 报告来电失败: \(error.localizedDescription)")
+                completion(false)
             }
         }
     }
@@ -185,11 +194,19 @@ public class LiveCommunicationKitManager: NSObject {
     /// 标记为已接听
     public func markCallAccepted() {
         isShowingIncomingCall = false
+        if let action = pendingAction {
+            action.fulfill()
+            pendingAction = nil
+        }
     }
     
     /// 标记为已拒绝
     public func markCallRejected() {
         isShowingIncomingCall = false
+        if let action = pendingAction {
+            action.fail()
+            pendingAction = nil
+        }
         currentConversation = nil
         currentCallUUID = nil
     }
@@ -210,6 +227,7 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
         print("[LiveCommunicationKitManager] ConversationManager 重置")
         currentConversation = nil
         isShowingIncomingCall = false
+        delegate?.liveCommunicationKitDidReset()
     }
     
     /// Conversation 变化
@@ -224,9 +242,15 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
         
         // 根据 Action 类型处理
         if action is JoinConversationAction {
-            // 用户点击了接听
-            delegate?.liveCommunicationKitDidAcceptCall(uuid: action.uuid)
-            action.fulfill()
+            // 延迟 fulfill，等待业务接听结果
+            pendingAction = action
+            delegate?.liveCommunicationKitDidAcceptCall(uuid: action.uuid) { success in
+                if success {
+                    self.markCallAccepted()
+                } else {
+                    self.markCallRejected()
+                }
+            }
         } else if action is EndConversationAction {
             // 用户点击了拒绝或结束通话
             if action.state == .running {
@@ -245,6 +269,7 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
         print("[LiveCommunicationKitManager] Action 超时: \(type(of: action))")
         delegate?.liveCommunicationKitDidTimeout(uuid: action.uuid)
         action.fail()
+        pendingAction = nil
     }
     
     /// 音频会话激活

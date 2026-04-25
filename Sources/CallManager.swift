@@ -7,6 +7,7 @@
 
 import Foundation
 import AgoraRtcKit
+import CallKit
 
 /// 通话核心管理器，负责信令交互、状态管理、音视频控制
 public class CallManager {
@@ -68,6 +69,9 @@ public class CallManager {
     
     // 群组通话用户列表
     private var remoteUsers: [UInt: CallUser] = [:]
+    
+    // 在 CallManager 类中新增属性
+    private var hasReportedConnected = false
     
     // 信令监听器（由 CallManager 实现，并注册到 signalDelegate）
     private let signalListener = CallManagerSignalListener()
@@ -254,7 +258,7 @@ public class CallManager {
     // MARK: - 公共方法 - 接听/拒绝/挂断
     
     /// 接听来电（在收到 didReceiveIncomingCall 后调用）
-    public func acceptCall() {
+    public func acceptCall(completion: ((Bool) -> Void)? = nil) {
         log("接听来电")
         guard currentState == .incoming,
               let channel = currentChannel,
@@ -262,13 +266,17 @@ public class CallManager {
               let remoteUser = currentRemoteUser,
               let userId = userProvider?.currentUserId else {
             log("⚠️ 接听失败: guard 不通过 (state=\(currentState), channel=\(currentChannel ?? "nil"), callType=\(currentCallType), remoteUser=\(currentRemoteUser), userId=\(userProvider?.currentUserId ?? "nil"))")
+            completion?(false)
             return
         }
         
         stopCallingTimeout()
         isCaller = false
         tokenProvider?.fetchToken(channelName: channel, userId: userId) { [weak self] result in
-            guard let self = self else { return }
+            guard let self = self else {
+                completion?(false)
+                return
+            }
             switch result {
             case .success(let token):
                 self.log("接听: 获取 Token 成功, 加入频道...")
@@ -276,13 +284,16 @@ public class CallManager {
                 if !success {
                     self.log("⚠️ 接听: 加入频道失败")
                     self.failWithError("加入频道失败")
+                    completion?(false)
                     return
                 }
                 self.signalDelegate?.sendAcceptResponse(toUserId: remoteUser.userId) { _ in }
                 self.currentState = .connecting
+                completion?(true)
             case .failure(let error):
                 self.log("⚠️ 接听: 获取 Token 失败: \(error.localizedDescription)")
                 self.failWithError(error.localizedDescription)
+                completion?(false)
             }
         }
     }
@@ -316,7 +327,7 @@ public class CallManager {
             signalDelegate?.sendCancelSignal(toUserId: remoteUser.userId) { _ in }
         }
         
-        disconnectCall(error: nil)
+        disconnectCall(error: nil, endedReason: .remoteEnded)
     }
     
     // MARK: - 公共方法 - 状态查询
@@ -372,8 +383,13 @@ public class CallManager {
     
     // MARK: - 信令接收（由 App 层信令模块调用）
     
-    /// 收到单聊来电
+    /// 收到单聊来电（不带系统UI完成回调，用于非VoIP推送场景）
     public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType) {
+        receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType, systemUICompletion: { _ in })
+    }
+    
+    /// 收到单聊来电
+    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType, systemUICompletion: @escaping (Bool) -> Void) {
         log("收到来电: from=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType)")
         guard user.userId != userProvider?.currentUserId else {
             log("⚠️ 来电忽略: 是自己")
@@ -438,7 +454,8 @@ public class CallManager {
                 LiveCommunicationKitManager.shared.reportIncomingCall(
                     uuid: callUUID,
                     callerName: user.name,
-                    isVideo: callType == .video
+                    isVideo: callType == .video,
+                    completion: systemUICompletion
                 )
             }
         }
@@ -448,8 +465,11 @@ public class CallManager {
                 uuid: callUUID,
                 handle: user.userId,
                 callerName: user.name,
-                isVideo: callType == .video
+                isVideo: callType == .video,
+                completion: systemUICompletion
             )
+        } else {
+            systemUICompletion(true) // 无系统界面，直接认为成功
         }
         
         DispatchQueue.main.async { [weak self] in
@@ -539,8 +559,8 @@ public class CallManager {
     // MARK: - 内部方法
     
     /// 统一的通话断开处理：先设置 disconnected/failed 状态通知 UI，延迟后再清理资源回 idle
-    private func disconnectCall(error: Error?) {
-        log("disconnectCall: error=\(error?.localizedDescription ?? "nil")")
+    private func disconnectCall(error: Error?, endedReason: CXCallEndedReason = .remoteEnded) {
+        log("disconnectCall: error=\(error?.localizedDescription ?? "nil"), reason=\(endedReason.rawValue)")
         guard currentState != .disconnected && currentState != .failed && currentState != .idle else {
             log("disconnectCall 忽略: 已是终态 \(currentState)")
             return
@@ -565,7 +585,7 @@ public class CallManager {
         }
         /// 没有启用LiveCommunicationKit，又启用了CallUI
         if !liveCommunicationKitEnable && useSystemCallUI {
-            CallKitManager.shared.reportCallEnded(reason: error != nil ? .failed : .remoteEnded)
+            CallKitManager.shared.reportCallEnded(reason: endedReason)
         }
         
         let targetState: CallState = (error != nil) ? .failed : .disconnected
@@ -686,7 +706,7 @@ private class CallManagerSignalListener: CallSignalListener {
     
     func onReceiveCall(fromUserId: String, channelName: String, token: String, callType: CallType) {
         let user = CallUser(userId: fromUserId, name: fromUserId)
-        manager?.receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType)
+        manager?.receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType) { _ in }
     }
     func onCallAccepted(fromUserId: String) { manager?.onCallAccepted(fromUserId: fromUserId) }
     func onCallRejected(fromUserId: String, reason: String?) { manager?.onCallRejected(fromUserId: fromUserId, reason: reason) }
@@ -696,6 +716,7 @@ private class CallManagerSignalListener: CallSignalListener {
 
 // MARK: - AgoraEngineDelegate
 extension CallManager: AgoraEngineDelegate {
+    
     public func engine(_ engine: AgoraEngineManager, didJoinChannel channel: String, uid: UInt) {
         log("引擎回调: 本地加入频道 channel=\(channel), uid=\(uid)")
         let localName = userProvider?.currentUserName ?? userProvider?.currentUserId ?? "\(uid)"
@@ -880,11 +901,32 @@ extension CallManager: AgoraEngineDelegate {
             break
         }
     }
+    
+    public func engine(_ engine: AgoraEngineManager, firstRemoteAudioFrameDecodedOfUid uid: UInt, elapsed: Int) {
+            guard currentState == .connected else { return }
+            if !hasReportedConnected {
+                hasReportedConnected = true
+                if useLiveCommunicationKit {
+                    if #available(iOS 17.4, *) {
+                        LiveCommunicationKitManager.shared.reportCallConnected()
+                    }
+                } else if useSystemCallUI {
+                    CallKitManager.shared.reportCallConnected()
+                }
+            }
+        }
 }
 
 // MARK: - CallKitManagerDelegate
 
 extension CallManager: CallKitManagerDelegate {
+    
+    public func callKitManagerDidReset() {
+        log("CallKit 重置，强制结束通话")
+        if currentState != .idle {
+            disconnectCall(error: nil, endedReason: .remoteEnded)
+        }
+    }
     
     /// 用户在系统来电界面点击了接听
     public func callKitManagerDidAcceptCall() {
@@ -914,22 +956,30 @@ extension CallManager: CallKitManagerDelegate {
 extension CallManager: LiveCommunicationKitManagerDelegate {
     
     /// 用户点击了接听
-    public func liveCommunicationKitDidAcceptCall(uuid: UUID) {
-        log("LiveCommunicationKit: 用户接听 uuid=\(uuid)")
-        acceptCall()
+    public func liveCommunicationKitDidAcceptCall(uuid: UUID, completion: @escaping (Bool) -> Void) {
+        log("LiveCommunicationKit: 用户接听")
+        acceptCall(completion: completion)
     }
     
     /// 用户点击了拒绝
     public func liveCommunicationKitDidRejectCall(uuid: UUID) {
-        log("LiveCommunicationKit: 用户拒绝 uuid=\(uuid)")
+        log("LiveCommunicationKit: 用户拒绝")
         rejectCall()
     }
     
     /// 通话超时未接听
     public func liveCommunicationKitDidTimeout(uuid: UUID) {
-        log("LiveCommunicationKit: 来电超时 uuid=\(uuid)")
+        log("LiveCommunicationKit: 来电超时")
         if currentState == .incoming {
             hangUp()
+        }
+    }
+    
+    /// LiveCommunicationKit 重置
+    public func liveCommunicationKitDidReset() {
+        log("LiveCommunicationKit 重置，强制结束通话")
+        if currentState != .idle {
+            disconnectCall(error: nil, endedReason: .remoteEnded)
         }
     }
 }
