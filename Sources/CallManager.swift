@@ -79,15 +79,17 @@ public class CallManager {
     private init() {
         engine.delegate = self
         signalListener.manager = self
+        
+        // 配置 LiveCommunicationKit（iOS 17.4+ 且已启用）
+        if #available(iOS 17.4, *) {
+            LiveCommunicationKitManager.shared.delegate = self
+            LiveCommunicationKitManager.shared.configure()
+            print("[CallManager] LiveCommunicationKit 已启用（iOS 17.4+）")
+        }
+        
         CallKitManager.shared.delegate = self
         // 根据 CallConfiguration 自动配置 CallKit
         CallKitManager.shared.configure()
-        // 配置 LiveCommunicationKit（iOS 17.4+ 且已启用）
-        if #available(iOS 17.4, *),
-           CallConfiguration.shared.isLiveCommunicationKitEnabled {
-            LiveCommunicationKitManager.shared.delegate = self
-            print("[CallManager] LiveCommunicationKit 已启用（iOS 17.4+）")
-        }
     }
     
     // MARK: - 通话框架选择
@@ -384,12 +386,12 @@ public class CallManager {
     // MARK: - 信令接收（由 App 层信令模块调用）
     
     /// 收到单聊来电（不带系统UI完成回调，用于非VoIP推送场景）
-    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType) {
+    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal) {
         receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType, systemUICompletion: { _ in })
     }
     
     /// 收到单聊来电
-    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType, systemUICompletion: @escaping (Bool) -> Void) {
+    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal, systemUICompletion: @escaping (Bool) -> Void) {
         log("收到来电: from=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType)")
         guard user.userId != userProvider?.currentUserId else {
             log("⚠️ 来电忽略: 是自己")
@@ -422,45 +424,20 @@ public class CallManager {
         let callUUID = UUID()
         currentCallUUID = callUUID
         
-        // 向系统报告来电（锁屏/后台可显示系统接听界面）
-//        if useSystemCallUI {
-//            
-//            // 根据配置选择使用 LiveCommunicationKit 或 CallKit
-//            if useLiveCommunicationKit {
-//                if #available(iOS 17.4, *) {
-//                    LiveCommunicationKitManager.shared.reportIncomingCall(
-//                        uuid: callUUID,
-//                        callerName: user.name,
-//                        isVideo: callType == .video
-//                    )
-//                }
-//            } else {
-//                CallKitManager.shared.reportIncomingCall(
-//                    uuid: callUUID,
-//                    handle: user.userId,
-//                    callerName: user.name,
-//                    isVideo: callType == .video
-//                )
-//            }
-//        } else {
-//            // 不使用系统来电界面，仅通过 App 内 uiDelegate 处理
-//            print("[CallManager] 系统来电界面已禁用，使用 App 内弹窗")
-//        }
+        let displayType = CallConfiguration.shared.displayType(for: incomingType)
         
-        var liveCommunicationKitEnable: Bool = false
-        if #available(iOS 17.4, *) {
-            if useLiveCommunicationKit {
-                liveCommunicationKitEnable = true
+        switch displayType {
+        case .liveCommunicationKit:
+            if #available(iOS 17.4, *) {
                 LiveCommunicationKitManager.shared.reportIncomingCall(
                     uuid: callUUID,
                     callerName: user.name,
                     isVideo: callType == .video,
                     completion: systemUICompletion
                 )
+                return
             }
-        }
-        /// 没有启用LiveCommunicationKit，又启用了CallUI
-        if !liveCommunicationKitEnable && useSystemCallUI {
+        case .callKit:
             CallKitManager.shared.reportIncomingCall(
                 uuid: callUUID,
                 handle: user.userId,
@@ -468,10 +445,12 @@ public class CallManager {
                 isVideo: callType == .video,
                 completion: systemUICompletion
             )
-        } else {
+            return
+        default:
             systemUICompletion(true) // 无系统界面，直接认为成功
         }
         
+        /// 没调用那两个，就调用普通界面
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             // 通知 uiDelegate 展示来电界面（由 App 层的 AppCallUIDelegate 处理弹窗和 VC present）
@@ -566,25 +545,13 @@ public class CallManager {
             return
         }
         // 通知系统通话结束（仅在启用系统来电界面时）
-//        if useSystemCallUI {
-//            if useLiveCommunicationKit {
-//                if #available(iOS 17.4, *) {
-//                    LiveCommunicationKitManager.shared.reportCallEnded(reason: error != nil ? "failed" : "ended")
-//                }
-//            } else {
-//                CallKitManager.shared.reportCallEnded(reason: error != nil ? .failed : .remoteEnded)
-//            }
-//        }
-        
-        var liveCommunicationKitEnable: Bool = false
-        if #available(iOS 17.4, *) {
-            if useLiveCommunicationKit {
-                liveCommunicationKitEnable = true
+        if useLiveCommunicationKit {
+            if #available(iOS 17.4, *) {
                 LiveCommunicationKitManager.shared.reportCallEnded(reason: error != nil ? "failed" : "ended")
             }
         }
-        /// 没有启用LiveCommunicationKit，又启用了CallUI
-        if !liveCommunicationKitEnable && useSystemCallUI {
+        /// 没有启用LiveCommunicationKit，但启用了CallUI
+        if useSystemCallUI {
             CallKitManager.shared.reportCallEnded(reason: endedReason)
         }
         
@@ -751,27 +718,17 @@ extension CallManager: AgoraEngineDelegate {
                 callStartTime = Date()
                 startDurationTimer()
             }
-            // 通知系统通话已接通（仅在启用系统来电界面时）
-//            if useSystemCallUI {
-//                if useLiveCommunicationKit {
-//                    if #available(iOS 17.4, *) {
-//                        LiveCommunicationKitManager.shared.reportCallConnected()
-//                    }
-//                } else {
-//                    CallKitManager.shared.reportCallConnected()
-//                }
-//            }
-            var liveCommunicationKitEnable: Bool = false
-            if #available(iOS 17.4, *) {
-                if useLiveCommunicationKit {
-                    liveCommunicationKitEnable = true
+            
+            if useLiveCommunicationKit {
+                if #available(iOS 17.4, *) {
                     LiveCommunicationKitManager.shared.reportCallConnected()
-                }
+                } 
             }
-            /// 没有启用LiveCommunicationKit，又启用了CallUI
-            if !liveCommunicationKitEnable && useSystemCallUI {
+            
+            if useSystemCallUI {
                 CallKitManager.shared.reportCallConnected()
             }
+            
         }
         
         if let remoteUser = currentRemoteUser, remoteUser.uid == 0 {
@@ -910,7 +867,8 @@ extension CallManager: AgoraEngineDelegate {
                     if #available(iOS 17.4, *) {
                         LiveCommunicationKitManager.shared.reportCallConnected()
                     }
-                } else if useSystemCallUI {
+                }
+                if useSystemCallUI {
                     CallKitManager.shared.reportCallConnected()
                 }
             }
@@ -945,6 +903,8 @@ extension CallManager: CallKitManagerDelegate {
         log("CallKit: 来电结束")
         // 如果还在 incoming 状态，说明用户没有在系统界面操作（可能是超时），挂断通话
         if currentState == .incoming {
+            rejectCall()
+        } else {
             hangUp()
         }
     }
@@ -961,10 +921,22 @@ extension CallManager: LiveCommunicationKitManagerDelegate {
         acceptCall(completion: completion)
     }
     
-    /// 用户点击了拒绝
+    /// 用户点击了拒绝/挂断
     public func liveCommunicationKitDidRejectCall(uuid: UUID) {
-        log("LiveCommunicationKit: 用户拒绝")
-        rejectCall()
+        log("LiveCommunicationKit: 用户拒绝/挂断, 当前状态=\(currentState)")
+        
+        // 根据当前状态决定执行拒绝还是挂断
+        switch currentState {
+        case .incoming:
+            // 未接听的来电 → 拒绝
+            rejectCall()
+        case .calling, .connecting, .connected, .reconnecting:
+            // 已接通的通话 → 挂断
+            hangUp()
+        default:
+            log("⚠️ 拒绝/挂断忽略: 无效状态=\(currentState)")
+            break
+        }
     }
     
     /// 通话超时未接听

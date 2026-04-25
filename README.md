@@ -217,7 +217,7 @@ class YourUserService: CurrentUserProvider {
 | 框架 | iOS 版本 | 说明 |
 |------|---------|------|
 | CallKit | 10.0+ | 系统来电界面，支持锁屏/后台接听 |
-| LiveCommunicationKit | 17.4+ | 新一代 VoIP 来电框架，可规避 CallKit 审核风险 |
+| LiveCommunicationKit | 17.4+ | 新一代 VoIP 来电框架，支持后台唤醒，同样支持锁屏/后台接听，可规避 CallKit 审核风险 |
 
 ### 配置逻辑矩阵
 
@@ -232,21 +232,35 @@ class YourUserService: CurrentUserProvider {
 ### 基础配置示例
 
 ```swift
-// 方式一：默认不使用系统来电界面（仅使用 App 内弹窗）
-CallConfiguration.shared.isCallKitEnabled = false
+// ========== 方式一：使用高级 API（推荐）==========
 
-// 方式二：启用 CallKit（所有 iOS 版本使用）
-CallConfiguration.shared.isCallKitEnabled = true
-CallConfiguration.shared.isLiveCommunicationKitEnabled = false
+// 仅使用 App 内弹窗
+CallConfiguration.shared.configure(mode: .none)
 
-// 方式三：启用 LiveCommunicationKit（iOS 17.4+ 使用，规避审核风险）
-CallConfiguration.shared.isCallKitEnabled = true
-CallConfiguration.shared.isLiveCommunicationKitEnabled = true
+// 仅使用 CallKit（所有 iOS 版本）
+CallConfiguration.shared.configure(mode: .callKitOnly)
+
+// 仅使用 LiveCommunicationKit（iOS 17.4+，规避审核风险）
+CallConfiguration.shared.configure(mode: .liveCommunicationKitOnly)
+
+// 优先使用 LiveCommunicationKit，iOS < 17.4 回退到 CallKit（推荐）
+CallConfiguration.shared.configure(mode: .auto)
+
+// 仅在 VoIP 推送时启用系统来电界面
+CallConfiguration.shared.configure(mode: .voipPushOnly)
+
+// ========== 方式二：链式调用 ==========
+CallConfiguration.shared
+    .configure(mode: .auto)
+    .callKitRingtoneSound = "ringtone_call.caf"
+
+// ========== 方式三：快速配置 ==========
+CallConfiguration.shared.enableForVoIPPushOnly()
 ```
 
 ### VoIP 推送集成示例
 
-当使用 VoIP 推送触发的来电时，可以动态控制是否启用系统来电界面：
+当使用 VoIP 推送触发的来电时，在收到推送时配置系统来电界面：
 
 ```swift
 // AppDelegate 或初始化时配置
@@ -256,9 +270,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // 配置通话功能
         CallSoundService.shared.isSoundEnabled = true
         CallSoundService.shared.incomingRingtonePath = Bundle.main.path(forResource: "ringtone_call", ofType: "wav")
-        
-        // 默认禁用系统来电界面
-        CallConfiguration.shared.isCallKitEnabled = false
         
         // 注册 VoIP 推送
         VoIPPushManager.shared.payloadDelegate = self
@@ -271,8 +282,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 // 实现 VoIPPushPayloadDelegate
 extension AppDelegate: VoIPPushPayloadDelegate {
     func voipPushManager(didReceivePayload payload: [AnyHashable: Any], completion: @escaping (CallIncomingInfo?) -> Void) {
-        // 收到 VoIP 推送时，启用系统来电界面
-        CallConfiguration.shared.isCallKitEnabled = true
+        // 收到 VoIP 推送时，获取系统来电界面展示类型
+        let displayType = CallConfiguration.shared.displayType(for: .voIPPush)
         
         // 解析推送内容
         let fromUserId = payload["fromUserId"] as? String ?? ""
@@ -313,19 +324,16 @@ class CallServiceManager {
         
         // ============ 系统来电界面配置 ============
         
-        // 方式一：仅使用 App 内弹窗（不启用系统来电界面）
-        CallConfiguration.shared.isCallKitEnabled = false
+        // 仅在 VoIP 推送时启用系统来电界面（推荐）
+        CallConfiguration.shared.configure(mode: .voipPushOnly)
         
-        // 方式二：启用 CallKit（所有 iOS 版本）
-        // CallConfiguration.shared.isCallKitEnabled = true
-        // CallConfiguration.shared.isLiveCommunicationKitEnabled = false
+        // 其他配置方式：
+        // - .none: 仅使用 App 内弹窗
+        // - .callKitOnly: 仅使用 CallKit
+        // - .liveCommunicationKitOnly: 仅使用 LiveCommunicationKit（iOS 17.4+）
+        // - .auto: 优先 LiveCommunicationKit，iOS < 17.4 回退到 CallKit
         
-        // 方式三：启用 LiveCommunicationKit（iOS 17.4+ 推荐，规避审核风险）
-        // CallConfiguration.shared.isCallKitEnabled = true
-        // CallConfiguration.shared.isLiveCommunicationKitEnabled = true
-        
-        // 可选：自定义系统来电界面铃声（复用 CallSoundService）
-        // 铃声优先级：CallConfiguration.callKitRingtoneSound > CallSoundService.incomingRingtonePath > 系统默认
+        // 可选：自定义系统来电界面铃声
         // CallConfiguration.shared.callKitRingtoneSound = "custom_ringtone.caf"
         
         // 可选：设置系统来电界面角标图标
@@ -354,8 +362,8 @@ class CallServiceManager {
     
     /// 处理 WebSocket 信令的来电（不使用系统来电界面）
     func handleIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType) {
-        // 确保非 VoIP 推送来电不使用系统来电界面
-        CallConfiguration.shared.isCallKitEnabled = false
+        // 普通来电不使用系统来电界面
+        let displayType = CallConfiguration.shared.displayType(for: .normal)
         
         CallManager.shared.receiveIncomingCall(
             from: user,
@@ -367,8 +375,8 @@ class CallServiceManager {
     
     /// 处理 WebSocket 信令的来电（仅 VoIP 推送触发时使用系统来电界面）
     func handleIncomingCallFromVoIP(from user: CallUser, channelName: String, token: String, callType: CallType) {
-        // 仅在 VoIP 推送触发时启用系统来电界面
-        CallConfiguration.shared.isCallKitEnabled = true
+        // VoIP 推送触发的来电使用系统来电界面
+        let displayType = CallConfiguration.shared.displayType(for: .voIPPush)
         
         CallManager.shared.receiveIncomingCall(
             from: user,
@@ -390,9 +398,9 @@ class AppCallUIDelegate: NSObject, CallUIDelegate {
     func callStateDidChange(_ state: CallState) {
         switch state {
         case .disconnected, .failed, .idle:
-            // 通话结束，重置 CallKit 状态
-            CallConfiguration.shared.isCallKitEnabled = false
-            // 如果使用 VoIP 推送模式，也要重置
+            // 通话结束，重置系统来电界面配置
+            CallConfiguration.shared.configure(mode: .none)
+            // 清除 VoIP 推送状态
             VoIPPushManager.shared.clearLastPayload()
         default:
             break

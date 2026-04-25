@@ -8,55 +8,25 @@
 import Foundation
 import AgoraCallKit
 
-// MARK: - 配置模式枚举
-
-/// 系统来电界面配置模式
-enum CallKitMode {
-    /// 仅使用 App 内弹窗（不启用系统来电界面）
-    case appOnly
-    
-    /// 启用 CallKit（所有 iOS 版本使用）
-    case callKitOnly
-    
-    /// 启用 LiveCommunicationKit（iOS 17.4+ 使用，规避审核风险）
-    case liveCommunicationKit
-    
-    /// 仅 VoIP 推送时使用系统来电界面（动态控制）
-    case voipPushOnly
-}
-
 // MARK: - 配置管理器
 
 class CallConfigurationExamples {
     
-    /// 配置系统来电界面
-    /// - Parameter mode: 配置模式
-    static func configure(mode: CallKitMode) {
-        switch mode {
-        case .appOnly:
-            // 方式一：仅使用 App 内弹窗
-            CallConfiguration.shared.isCallKitEnabled = false
-            CallConfiguration.shared.isLiveCommunicationKitEnabled = false
-            print("[配置] App 内弹窗模式")
-            
-        case .callKitOnly:
-            // 方式二：启用 CallKit
-            CallConfiguration.shared.isCallKitEnabled = true
-            CallConfiguration.shared.isLiveCommunicationKitEnabled = false
-            print("[配置] CallKit 模式")
-            
-        case .liveCommunicationKit:
-            // 方式三：启用 LiveCommunicationKit（iOS 17.4+ 推荐）
-            CallConfiguration.shared.isCallKitEnabled = true
-            CallConfiguration.shared.isLiveCommunicationKitEnabled = true
-            print("[配置] LiveCommunicationKit 模式")
-            
-        case .voipPushOnly:
-            // 方式四：默认禁用，仅 VoIP 推送时启用
-            CallConfiguration.shared.isCallKitEnabled = false
-            CallConfiguration.shared.isLiveCommunicationKitEnabled = true
-            print("[配置] VoIP 推送触发模式")
-        }
+    /// 配置系统来电界面模式
+    /// - Parameter mode: 系统来电界面模式
+    static func configure(mode: SystemCallUI) {
+        CallConfiguration.shared.configure(mode: mode)
+        print("[配置] 系统来电界面模式: \(mode)")
+    }
+    
+    /// 根据来电类型获取系统来电界面展示类型
+    /// - Parameter type: 来电类型
+    /// - Returns: 系统来电界面展示类型
+    @discardableResult
+    static func displayType(for type: IncomingCallType) -> SystemCallDisplayType {
+        let result = CallConfiguration.shared.displayType(for: type)
+        print("[配置] 来电类型: \(type), 展示类型: \(result)")
+        return result
     }
     
     /// 配置铃声
@@ -83,18 +53,54 @@ class CallConfigurationExamples {
         CallConfiguration.shared.callKitIconName = iconName
         print("[配置] 图标: \(iconName)")
     }
+}
+
+// MARK: - 配置示例
+
+extension CallConfigurationExamples {
     
-    /// 检查当前系统来电界面类型
-    static func checkCurrentFramework() -> String {
-        if #available(iOS 17.4, *) {
-            if CallConfiguration.shared.isLiveCommunicationKitEnabled {
-                return "LiveCommunicationKit"
-            }
+    /// 使用示例
+    static func usageExamples() {
+        // ========== 方式一：configure() - App 启动时配置 ==========
+        
+        // 仅使用 App 内弹窗
+        CallConfiguration.shared.configure(mode: .none)
+        
+        // 仅使用 CallKit（所有 iOS 版本）
+        CallConfiguration.shared.configure(mode: .callKitOnly)
+        
+        // 仅使用 LiveCommunicationKit（iOS 17.4+，规避审核风险）
+        CallConfiguration.shared.configure(mode: .liveCommunicationKitOnly)
+        
+        // 优先使用 LiveCommunicationKit，iOS < 17.4 回退到 CallKit（推荐）
+        CallConfiguration.shared.configure(mode: .auto)
+        
+        // 仅在 VoIP 推送时启用系统来电界面
+        CallConfiguration.shared.configure(mode: .voipPushOnly)
+        
+        // ========== 方式二：displayType(for:) - 来电时获取展示类型 ==========
+        
+        // VoIP 推送来电：根据 SystemCallUI 配置决定展示类型
+        let voipDisplayType = CallConfiguration.shared.displayType(for: .voIPPush)
+        switch voipDisplayType {
+        case .liveCommunicationKit:
+            print("使用 LiveCommunicationKit")
+        case .callKit:
+            print("使用 CallKit")
+        case .none:
+            print("不使用系统来电界面")
         }
-        if CallConfiguration.shared.isCallKitEnabled {
-            return "CallKit"
+        
+        // 普通来电：始终不显示系统来电界面
+        let normalDisplayType = CallConfiguration.shared.displayType(for: .normal)
+        if case .none = normalDisplayType {
+            print("仅使用 App 内弹窗")
         }
-        return "App 内弹窗"
+        
+        // ========== 方式三：链式调用 ==========
+        CallConfiguration.shared
+            .configure(mode: .auto)
+            .callKitRingtoneSound = "ringtone_call.caf"
     }
 }
 
@@ -105,6 +111,7 @@ extension CallConfigurationExamples {
     /// 打印当前配置状态
     static func printCurrentConfiguration() {
         print("========== 当前配置状态 ==========")
+        print("系统来电界面模式: \(CallConfiguration.shared.systemCallUI)")
         print("isCallKitEnabled: \(CallConfiguration.shared.isCallKitEnabled)")
         print("isLiveCommunicationKitEnabled: \(CallConfiguration.shared.isLiveCommunicationKitEnabled)")
         
@@ -120,7 +127,7 @@ extension CallConfigurationExamples {
             print("callKitIconName: (系统默认)")
         }
         
-        print("当前框架: \(checkCurrentFramework())")
+        print("当前框架: \(CallConfiguration.shared.currentFramework)")
         print("==================================")
     }
 }

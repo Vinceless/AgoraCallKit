@@ -99,6 +99,7 @@ public class CallKitManager: NSObject {
     /// 若 CallKit 未启用则静默忽略，App 通过 uiDelegate 处理来电即可
     public func reportIncomingCall(uuid: UUID, handle: String, callerName: String, isVideo: Bool,
                                    completion: @escaping (Bool) -> Void) {
+        print("[CallKitManager] reportIncomingCall: uuid=\(uuid)")
         guard CallConfiguration.shared.isCallKitEnabled else {
             print("[CallKitManager] CallKit 未启用，跳过报告来电")
             completion(false)
@@ -106,6 +107,7 @@ public class CallKitManager: NSObject {
         }
         
         currentCallUUID = uuid
+        print("[CallKitManager] reportIncomingCall: currentCallUUID 已设置为 \(uuid)")
         
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type: .generic, value: handle)
@@ -141,8 +143,13 @@ public class CallKitManager: NSObject {
     
     /// 报告通话已结束
     public func reportCallEnded(reason: CXCallEndedReason = .remoteEnded) {
+        print("[CallKitManager] reportCallEnded: isCallKitEnabled=\(CallConfiguration.shared.isCallKitEnabled), currentCallUUID=\(currentCallUUID?.uuidString ?? "nil")")
         guard CallConfiguration.shared.isCallKitEnabled else { return }
-        guard let uuid = currentCallUUID else { return }
+        guard let uuid = currentCallUUID else {
+            print("[CallKitManager] reportCallEnded: UUID 为空，跳过")
+            return
+        }
+        print("[CallKitManager] reportCallEnded: uuid=\(uuid), reason=\(reason.rawValue)")
         provider?.reportCall(with: uuid, endedAt: Date(), reason: reason)
         currentCallUUID = nil
         isShowingIncomingCall = false

@@ -2,8 +2,14 @@
 //  VoIPPushManager.swift
 //  AgoraCallKit
 //
-//  VoIP 推送管理器：注册 PushKit VoIP 推送，收到推送后通过代理让 App 解析 payload，
-//  再将解析后的通话信息回调给 SDK 处理来电
+//  VoIP 推送管理器：注册 PushKit VoIP 推送，收到推送后处理来电
+//
+//  重要说明：
+//  - iOS 13+ 要求 VoIP 推送必须配合 CallKit 或 LiveCommunicationKit 使用
+//  - PKPushRegistry delegate 必须在返回前完成来电报告
+//  - LiveCommunicationKit 需要在返回前调用 reportNewIncomingConversation
+//  - 参考：Apple Bug FB16655952 - PushKit async delegate broken
+//  - 解决方案：添加 Thread.sleep(forTimeInterval: 0.05) 确保执行时机
 //
 
 import Foundation
@@ -67,17 +73,23 @@ public class VoIPPushManager: NSObject {
         super.init()
     }
     
+    // MARK: - 初始化
+    
     /// 注册 PushKit VoIP 推送（App 启动时调用）
     public func registerForVoIPPush() {
+        // 使用私有队列初始化 PKPushRegistry，避免与主线程冲突
+//        let queue = DispatchQueue(label: "com.agoracallkit.voippush", qos: .userInteractive)
+//        let registry = PKPushRegistry(queue: queue)
         let registry = PKPushRegistry(queue: DispatchQueue.main)
         registry.delegate = self
         registry.desiredPushTypes = [.voIP]
         self.pushRegistry = registry
-        print("[VoIPPushManager] 已注册 PushKit VoIP 推送")
+        
+        print("[VoIPPushManager] 已注册 PushKit VoIP 推送)")
+        
     }
     
     /// 清除最后一次推送的 payload 记录
-    /// - 说明：通话结束后调用，重置推送状态
     public func clearLastPayload() {
         lastPayload = nil
         print("[VoIPPushManager] 已清除推送记录")
@@ -96,38 +108,37 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     
     /// 收到 VoIP 推送
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping @Sendable () -> Void) {
-//    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: [AnyHashable: Any], for type: PKPushType, completion: @escaping () -> Void) {
-        print("[VoIPPushManager] 收到 VoIP 推送: \(payload)")
+        print("[VoIPPushManager] 收到 VoIP 推送")
         
-        // 保存推送记录
         lastPayload = payload.dictionaryPayload
         
         guard type == .voIP else {
-            completion()    /// 无论成功与否，都必须调用 completion()。如果不调用，系统会认为你的 App 没有正确处理这个推送，然后会"惩罚"——禁止 App 在后台或强制退出状态下继续接收 PushKit 通知
+            completion()
             return
         }
         
         guard let payloadDelegate = payloadDelegate else {
-                    print("[VoIPPushManager] ⚠️ 未设置 payloadDelegate，无法解析推送")
-                    completion()
-                    return
-                }
+            print("[VoIPPushManager] ⚠️ 未设置 payloadDelegate，无法解析推送")
+            completion()
+            return
+        }
         
+        // 解析 payload
         payloadDelegate.voipPushManager(didReceivePayload: payload.dictionaryPayload) { [weak self] info in
             guard let self = self else { completion(); return }
+            
             if let info = info {
                 // 解析成功，交给 CallManager 处理来电
                 self.handleIncomingCall(info: info) { success in
-                                    if !success {
-                                        print("[VoIPPushManager] ⚠️ 系统来电界面显示失败")
-                                    }
-                                    completion()
-                                }
+                    if !success {
+                        print("[VoIPPushManager] ⚠️ 系统来电界面显示失败")
+                    }
+                    completion()
+                }
             } else {
                 print("[VoIPPushManager] ⚠️ App 解析 payload 返回 nil，忽略此推送")
                 completion()
             }
-            
         }
     }
     
@@ -153,7 +164,9 @@ extension VoIPPushManager: PKPushRegistryDelegate {
             channelName: info.channelName,
             token: info.token,
             callType: info.callType,
+            incomingType: .voIPPush,
             systemUICompletion: completion
         )
     }
+
 }

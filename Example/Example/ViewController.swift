@@ -178,7 +178,7 @@ class ViewController: UIViewController {
     
     @objc private func simulateIncomingCall() {
         // 模拟来电（使用 App 内弹窗）
-        CallConfiguration.shared.isCallKitEnabled = false
+        CallConfiguration.shared.configure(mode: .none)
         
         let user = CallUser(userId: "simulator", uid: 999, name: "模拟来电")
         WebSocketSignalExamples.handleIncomingCall(
@@ -191,7 +191,7 @@ class ViewController: UIViewController {
     
     @objc private func simulateIncomingCallWithSystem() {
         // 模拟来电（使用系统来电界面）
-        CallConfiguration.shared.isCallKitEnabled = true
+        CallConfiguration.shared.configure(mode: .auto)
         
         let user = CallUser(userId: "simulator", uid: 999, name: "模拟来电")
         WebSocketSignalExamples.handleIncomingCallFromVoIP(

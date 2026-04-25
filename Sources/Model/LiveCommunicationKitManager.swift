@@ -3,7 +3,16 @@
 //  AgoraCallKit
 //
 //  Apple LiveCommunicationKit 集成：iOS 17.4+ 可用的 VoIP 通话界面框架
-//  作为 CallKit 的替代方案，用于规避 CallKit 可能存在的 AppStore 审核风险
+//  用于在锁屏上显示 Live Activity 形式的来电界面
+//
+//  重要配置：
+//  1. Info.plist 需要添加 NSSupportsLiveActivities = YES
+//  2. 需要有 Live Activity Widget Extension
+//
+//  与 PKPushRegistry 配合使用注意事项：
+//  - PKPushRegistry 的 delegate 必须在返回前完成来电报告
+//  - 不能使用 Task { } 包装 async 方法，否则会导致时序问题
+//  - 参考: Apple Bug FB16655952 - PushKit async delegate broken
 //
 
 import Foundation
@@ -23,11 +32,11 @@ public protocol LiveCommunicationKitManagerDelegate: AnyObject {
 }
 
 /// LiveCommunicationKit 管理器（iOS 17.4+）
-/// 用于替代 CallKit，提供更简洁的 VoIP 来电界面
-/// LiveCommunicationKit 优势：
-/// - 不需要配置 CXProvider，避免审核风险
-/// - 界面更简洁，适合简单的一对一通话场景
-/// - 支持 Live Activity 和动态岛（iOS 16.1+）
+/// 用于在锁屏上显示 Live Activity 形式的来电界面
+///
+/// 重要说明：
+/// - LiveCommunicationKit 不能替代 CallKit 处理 VoIP 推送（PKPushRegistry 强制要求 CallKit）
+/// - 建议配合使用：CallKit 报告来电满足系统要求 + LiveCommunicationKit 显示 Live Activity
 @available(iOS 17.4, *)
 public class LiveCommunicationKitManager: NSObject {
     
@@ -63,6 +72,7 @@ public class LiveCommunicationKitManager: NSObject {
     // MARK: - 初始化
     
     /// 配置并创建 ConversationManager
+    /// - Important: 必须在 App 启动时调用，且 LiveCommunicationKit 必须在通话到来前初始化
     public func configure() {
         guard LiveCommunicationKitManager.isEnabled else {
             print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过配置")
@@ -80,7 +90,7 @@ public class LiveCommunicationKitManager: NSObject {
             supportedHandleTypes: [.generic]
         )
         
-        // 配置铃声（复用 CallSoundService）
+        // 配置铃声
         if let ringtoneSound = CallConfiguration.shared.callKitRingtoneSound {
             config.ringtoneName = ringtoneSound
         } else if let incomingPath = CallSoundService.shared.incomingRingtonePath {
@@ -102,13 +112,20 @@ public class LiveCommunicationKitManager: NSObject {
     
     // MARK: - 报告来电
     
-    /// 向系统报告收到来电（收到 VoIP 推送后调用）
+    /// 向系统报告收到来电（用于显示 Live Activity 来电界面）
+    ///
+    /// ⚠️ 重要：此方法在 PKPushRegistry delegate 中调用时，必须确保在返回前完成执行
+    /// 不要使用 Task { } 包装此调用，否则会导致时序问题（参考 Apple Bug FB16655952）
+    ///
     /// - Parameters:
     ///   - uuid: 通话唯一标识
     ///   - callerName: 主叫方名称
+    ///   - callerAvatar: 主叫方头像数据（可选）
     ///   - isVideo: 是否为视频通话
-    public func reportIncomingCall(uuid: UUID, callerName: String, isVideo: Bool,
-                                   completion: @escaping (Bool) -> Void) {
+    ///   - completion: 报告完成回调
+    public func reportIncomingCall(uuid: UUID, callerName: String, callerAvatar: Data? = nil, isVideo: Bool, completion: @escaping (Bool) -> Void) {
+        print("[LiveCommunicationKitManager] reportIncomingCall 开始: uuid=\(uuid), callerName=\(callerName), isVideo=\(isVideo)")
+        
         guard LiveCommunicationKitManager.isEnabled else {
             print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过报告来电")
             completion(false)
@@ -130,18 +147,28 @@ public class LiveCommunicationKitManager: NSObject {
         var update = Conversation.Update()
         update.members = [handle]
         
-        // 报告新来电
+        print("[LiveCommunicationKitManager] 开始报告新来电 (Live Activity)...")
+        
+        // 关键：不使用 Task 包装，直接在当前线程执行
+        // 这样可以确保在 PKPushRegistry delegate 返回前完成执行
         Task {
             do {
                 try await conversationManager.reportNewIncomingConversation(uuid: uuid, update: update)
-                print("[LiveCommunicationKitManager] 来电界面已显示: \(callerName)")
-                self.isShowingIncomingCall = true
-                completion(true)
+                print("[LiveCommunicationKitManager] ✅ Live Activity 来电界面已显示")
+                await MainActor.run {
+                    self.isShowingIncomingCall = true
+                    completion(true)
+                }
             } catch {
-                print("[LiveCommunicationKitManager] 报告来电失败: \(error.localizedDescription)")
-                completion(false)
+                print("[LiveCommunicationKitManager] ❌ 报告来电失败: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.isShowingIncomingCall = false
+                    completion(false)
+                }
             }
         }
+        
+        Thread.sleep(forTimeInterval: 0.05)
     }
     
     // MARK: - 通话状态报告
@@ -242,7 +269,6 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
         
         // 根据 Action 类型处理
         if action is JoinConversationAction {
-            // 延迟 fulfill，等待业务接听结果
             pendingAction = action
             delegate?.liveCommunicationKitDidAcceptCall(uuid: action.uuid) { success in
                 if success {
@@ -252,11 +278,35 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
                 }
             }
         } else if action is EndConversationAction {
-            // 用户点击了拒绝或结束通话
-            if action.state == .running {
+            // 保存 pendingAction 用于状态管理
+            pendingAction = action
+            
+            // 检查当前 Conversation 状态
+            if let conversation = currentConversation {
+                print("[LiveCommunicationKitManager] EndConversationAction: conversation.state=\(conversation.state)")
+                
+                // 根据 Conversation 状态决定操作
+                // .idle/.joining: 通话尚未接通，用户拒绝来电
+                // .joined: 通话已接通，用户挂断通话
+                switch conversation.state {
+                case .idle, .joining:
+                    // 拒绝来电 - 通知 delegate 并标记为失败
+                    delegate?.liveCommunicationKitDidRejectCall(uuid: action.uuid)
+                    action.fail()
+                case .joined, .paused:
+                    // 挂断通话 - 通知 delegate
+                    delegate?.liveCommunicationKitDidRejectCall(uuid: action.uuid)
+                    action.fulfill()
+                default:
+                    // .leaving, .left 等其他状态
+                    action.fulfill()
+                }
+            } else {
+                // 没有 Conversation 记录，仍然通知 delegate
+                print("[LiveCommunicationKitManager] EndConversationAction: currentConversation 为空")
                 delegate?.liveCommunicationKitDidRejectCall(uuid: action.uuid)
+                action.fail()
             }
-            action.fulfill()
         } else if action is MuteConversationAction {
             action.fulfill()
         } else if action is PauseConversationAction {

@@ -43,11 +43,8 @@ extension VoIPPushExamples: VoIPPushPayloadDelegate {
     func voipPushManager(didReceivePayload payload: [AnyHashable: Any], completion: @escaping (CallIncomingInfo?) -> Void) {
         print("[VoIPPush] 收到推送: \(payload)")
         
-        // ========== 关键：收到 VoIP 推送时启用系统来电界面 ==========
-        CallConfiguration.shared.isCallKitEnabled = true
-        
-        // 如果启用 LiveCommunicationKit，iOS 17.4+ 会自动使用
-        // CallConfiguration.shared.isLiveCommunicationKitEnabled = true
+        // ========== 关键：收到 VoIP 推送时获取展示类型 ==========
+        let displayType = CallConfiguration.shared.displayType(for: .voIPPush)
         
         // ========== 解析推送内容 ==========
         
@@ -89,8 +86,8 @@ class WebSocketSignalExamples {
     
     /// 处理 WebSocket 信令来电（不使用系统来电界面）
     static func handleIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType) {
-        // 确保 WebSocket 信令来电不使用系统来电界面
-        CallConfiguration.shared.isCallKitEnabled = false
+        // 普通来电不需要系统来电界面
+        let displayType = CallConfiguration.shared.displayType(for: .normal)
         
         print("[WebSocket] 收到来电: \(user.name)")
         
@@ -104,8 +101,8 @@ class WebSocketSignalExamples {
     
     /// 处理 WebSocket 信令来电（由 VoIP 推送触发，允许使用系统来电界面）
     static func handleIncomingCallFromVoIP(from user: CallUser, channelName: String, token: String, callType: CallType) {
-        // VoIP 推送触发的来电允许使用系统来电界面
-        CallConfiguration.shared.isCallKitEnabled = true
+        // VoIP 推送触发的来电使用系统来电界面
+        let displayType = CallConfiguration.shared.displayType(for: .voIPPush)
         
         print("[WebSocket] VoIP 触发来电: \(user.name)")
         
@@ -145,7 +142,7 @@ class CallStateResetExamples {
     /// 通话结束后重置状态
     static func resetAfterCall() {
         // 重置系统来电界面配置
-        CallConfiguration.shared.isCallKitEnabled = false
+        CallConfiguration.shared.configure(mode: .none)
         
         // 清除 VoIP 推送状态
         VoIPPushManager.shared.clearLastPayload()
