@@ -157,6 +157,26 @@ public class CallKitManager: NSObject {
     
     // MARK: - 主动操作
     
+    /// 标记为已接听（当用户在 App 内点击"接受"时调用，通知 CallKit 停止震动）
+    public func markCallAccepted() {
+        guard CallConfiguration.shared.isCallKitEnabled else { return }
+        guard let uuid = currentCallUUID else {
+            print("[CallKitManager] markCallAccepted: UUID 为空，跳过")
+            return
+        }
+        // 通过 CXAnswerCallAction 来标记通话已开始，从而停止 CallKit 的震动
+        let action = CXAnswerCallAction(call: uuid)
+        let transaction = CXTransaction(action: action)
+        callController.request(transaction) { error in
+            if let error = error {
+                print("[CallKitManager] markCallAccepted 失败: \(error.localizedDescription)")
+            } else {
+                print("[CallKitManager] markCallAccepted 成功，CallKit 来电界面应停止震动")
+                self.isShowingIncomingCall = false
+            }
+        }
+    }
+    
     /// 主动结束通话（用户在 App 内点击挂断时调用，通知系统更新 UI）
     public func endCall() {
         guard CallConfiguration.shared.isCallKitEnabled else { return }

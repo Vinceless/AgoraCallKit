@@ -291,6 +291,13 @@ public class CallManager {
                 }
                 self.signalDelegate?.sendAcceptResponse(toUserId: remoteUser.userId) { _ in }
                 self.currentState = .connecting
+                
+                
+                // ========== 通知 CallKit 停止来电界面 ==========
+                // 当用户在 App 内点击"接受"时，需要通知 CallKit/LiveCommunicationKit 通话已接听
+                // 这样系统来电界面才会停止震动
+//                CallKitManager.shared.markCallAccepted()
+                
                 completion?(true)
             case .failure(let error):
                 self.log("⚠️ 接听: 获取 Token 失败: \(error.localizedDescription)")
@@ -408,7 +415,7 @@ public class CallManager {
             } else {
                 // 不同房间的来电，自动拒绝
                 log("⚠️ 来电忙碌: 当前状态=\(currentState), 不同房间，自动拒绝")
-                signalDelegate?.sendRejectResponse(toUserId: user.userId, reason: "busy") { _ in }
+//                signalDelegate?.sendRejectResponse(toUserId: user.userId, reason: "busy") { _ in }
             }
             return
         }
@@ -551,9 +558,7 @@ public class CallManager {
             }
         }
         /// 没有启用LiveCommunicationKit，但启用了CallUI
-        if useSystemCallUI {
-            CallKitManager.shared.reportCallEnded(reason: endedReason)
-        }
+        CallKitManager.shared.reportCallEnded(reason: endedReason)
         
         let targetState: CallState = (error != nil) ? .failed : .disconnected
         currentState = targetState
@@ -725,9 +730,7 @@ extension CallManager: AgoraEngineDelegate {
                 } 
             }
             
-            if useSystemCallUI {
-                CallKitManager.shared.reportCallConnected()
-            }
+            CallKitManager.shared.reportCallConnected()
             
         }
         
@@ -868,9 +871,7 @@ extension CallManager: AgoraEngineDelegate {
                         LiveCommunicationKitManager.shared.reportCallConnected()
                     }
                 }
-                if useSystemCallUI {
-                    CallKitManager.shared.reportCallConnected()
-                }
+                CallKitManager.shared.reportCallConnected()
             }
         }
 }
