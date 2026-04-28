@@ -5,8 +5,8 @@
 //  Apple CallKit 集成：支持锁屏/后台来电接听界面
 //  收到 VoIP 推送后，通过 CXProvider 向系统报告来电，显示系统来电 UI
 //  用户在系统界面上接听/拒绝后，通过 CXProviderDelegate 回调通知 CallManager
-//
-
+//  iOS区不给用，屏蔽了
+#if DEBUG
 import Foundation
 import CallKit
 import AVFoundation
@@ -21,6 +21,8 @@ public protocol CallKitManagerDelegate: AnyObject {
     func callKitManagerDidEndCall()
     /// Provider 被系统重置
     func callKitManagerDidReset()
+    /// App 进入前台，CallKit 来电界面已关闭，但用户已在系统界面接听，需要保持通话
+    func callKitManagerDidDismissWhileAccepted()
 }
 
 /// CallKit 管理器：向系统报告来电、管理通话生命周期
@@ -178,23 +180,27 @@ public class CallKitManager: NSObject {
     }
     
     /// 关闭来电界面（App 进入前台时调用，隐藏系统来电界面）
-    public func dismissIncomingCallUI() {
+    /// - Parameter hasUserAccepted: 用户是否已经在系统界面点击了接听
+    public func dismissIncomingCallUI(hasUserAccepted: Bool = false) {
         guard CallConfiguration.shared.isCallKitEnabled else { return }
         guard let uuid = currentCallUUID, isShowingIncomingCall else {
             print("[CallKitManager] dismissIncomingCallUI: 无需关闭（UUID=\(currentCallUUID?.uuidString ?? "nil"), isShowing=\(isShowingIncomingCall)）")
             return
         }
-        print("[CallKitManager] dismissIncomingCallUI: 关闭系统来电界面")
-        // 通过 CXEndCallAction 关闭来电界面
-        let action = CXEndCallAction(call: uuid)
-        let transaction = CXTransaction(action: action)
-        callController.request(transaction) { error in
-            if let error = error {
-                print("[CallKitManager] dismissIncomingCallUI 失败: \(error.localizedDescription)")
-            } else {
-                print("[CallKitManager] dismissIncomingCallUI 成功，系统来电界面已关闭")
-                self.isShowingIncomingCall = false
-            }
+        print("[CallKitManager] dismissIncomingCallUI: 关闭系统来电界面, hasUserAccepted=\(hasUserAccepted)")
+        
+        if hasUserAccepted {
+            // 用户已在系统界面接听，只关闭界面不结束通话
+            print("[CallKitManager] dismissIncomingCallUI: 用户已接听，标记为需要保持通话")
+            // 标记为不再显示来电界面
+            isShowingIncomingCall = false
+            // 通知 delegate 通话需要继续（不调用 hangUp）
+            delegate?.callKitManagerDidDismissWhileAccepted()
+        } else {
+            // 用户还未接听：直接标记为不显示来电界面，由 App 显示来电弹窗
+            // 注意：不调用 CXEndCallAction，避免触发 didEndCall → rejectCall
+            print("[CallKitManager] dismissIncomingCallUI: 用户未接听，标记隐藏，由 App 显示来电弹窗")
+            isShowingIncomingCall = false
         }
     }
     
@@ -273,3 +279,4 @@ extension CallKitManager: CXProviderDelegate {
         delegate?.callKitManagerDidEndCall()
     }
 }
+#endif
