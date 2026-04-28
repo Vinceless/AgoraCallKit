@@ -144,15 +144,15 @@ public class CallKitManager: NSObject {
     }
     
     /// 报告通话已结束
-    public func reportCallEnded(reason: CXCallEndedReason = .remoteEnded) {
+    public func reportCallEnded(reason: CallEndedReason = .remoteEnded) {
         print("[CallKitManager] reportCallEnded: isCallKitEnabled=\(CallConfiguration.shared.isCallKitEnabled), currentCallUUID=\(currentCallUUID?.uuidString ?? "nil")")
         guard CallConfiguration.shared.isCallKitEnabled else { return }
         guard let uuid = currentCallUUID else {
             print("[CallKitManager] reportCallEnded: UUID 为空，跳过")
             return
         }
-        print("[CallKitManager] reportCallEnded: uuid=\(uuid), reason=\(reason.rawValue)")
-        provider?.reportCall(with: uuid, endedAt: Date(), reason: reason)
+        print("[CallKitManager] reportCallEnded: uuid=\(uuid), reason=\(reason)")
+        provider?.reportCall(with: uuid, endedAt: Date(), reason: reason.cxCallEndedReason)
         currentCallUUID = nil
         isShowingIncomingCall = false
     }

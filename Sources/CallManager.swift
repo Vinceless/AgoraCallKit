@@ -128,7 +128,7 @@ public class CallManager {
         }
         
         // 1. 关闭系统来电界面（CallKit 或 LiveCommunicationKit）
-        log("App 进入前台: useLiveCommunicationKit=\(useLiveCommunicationKit), useSystemCallUI=\(useSystemCallUI)")
+        log("App 进入前台: useLiveCommunicationKit=\(useLiveCommunicationKit),")
         if useLiveCommunicationKit {
             if #available(iOS 17.4, *) {
                 log("App 进入前台: 关闭 LiveCommunicationKit 来电界面")
@@ -640,8 +640,8 @@ public class CallManager {
     // MARK: - 内部方法
     
     /// 统一的通话断开处理：先设置 disconnected/failed 状态通知 UI，延迟后再清理资源回 idle
-    private func disconnectCall(error: Error?, endedReason: CXCallEndedReason = .remoteEnded) {
-        log("disconnectCall: error=\(error?.localizedDescription ?? "nil"), reason=\(endedReason.rawValue)")
+    private func disconnectCall(error: Error?, endedReason: CallEndedReason = .remoteEnded) {
+        log("disconnectCall: error=\(error?.localizedDescription ?? "nil"), reason=\(endedReason)")
         guard currentState != .disconnected && currentState != .failed && currentState != .idle else {
             log("disconnectCall 忽略: 已是终态 \(currentState)")
             return

@@ -19,3 +19,45 @@ public enum CallState: Equatable {
     case disconnected      // 已断开（通话结束）
     case failed            // 失败
 }
+
+// MARK: - 通话结束原因枚举
+// 用于替代 CallKit 的 CXCallEndedReason（中国区 App Store 审核不允许使用 CallKit）
+
+public enum CallEndedReason: Equatable {
+    case failed            // 通话失败
+    case remoteEnded       // 对方结束通话
+    case unanswered        // 对方未接听
+    case answeredElsewhere // 已在其他设备接听
+    case declinedElsewhere // 已在其他设备拒绝
+}
+
+#if DEBUG
+
+import CallKit
+
+extension CallEndedReason {
+    
+    /// 转换为 CXCallEndedReason（用于 CallKit 场景）
+    public var cxCallEndedReason: CXCallEndedReason {
+        switch self {
+        case .failed:            return .failed
+        case .remoteEnded:       return .remoteEnded
+        case .unanswered:         return .unanswered
+        case .answeredElsewhere: return .answeredElsewhere
+        case .declinedElsewhere: return .declinedElsewhere
+        }
+    }
+    
+    /// 从 CXCallEndedReason 转换
+    public init(cxCallEndedReason: CXCallEndedReason) {
+        switch cxCallEndedReason {
+        case .failed:            self = .failed
+        case .remoteEnded:       self = .remoteEnded
+        case .unanswered:         self = .unanswered
+        case .answeredElsewhere:  self = .answeredElsewhere
+        case .declinedElsewhere: self = .declinedElsewhere
+        @unknown default:        self = .failed
+        }
+    }
+}
+#endif
