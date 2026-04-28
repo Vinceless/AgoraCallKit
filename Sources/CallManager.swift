@@ -73,6 +73,9 @@ public class CallManager {
     // 在 CallManager 类中新增属性
     private var hasReportedConnected = false
     
+    /// 用户是否通过系统来电界面（CallKit/LiveCommunicationKit）点击了接听
+    private var hasAcceptedViaSystemUI = false
+    
     // 信令监听器（由 CallManager 实现，并注册到 signalDelegate）
     private let signalListener = CallManagerSignalListener()
     
@@ -90,6 +93,75 @@ public class CallManager {
         CallKitManager.shared.delegate = self
         // 根据 CallConfiguration 自动配置 CallKit
         CallKitManager.shared.configure()
+        
+        // 注册 App 进入前台通知，关闭系统来电界面并显示自定义来电界面
+        registerAppLifecycleObserver()
+    }
+    
+    // MARK: - App 生命周期监听
+    
+    /// 注册 App 进入前台通知
+    private func registerAppLifecycleObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        log("已注册 App 进入前台通知")
+    }
+    
+    /// App 进入前台时调用：关闭系统来电界面，根据接听状态显示对应界面
+    @objc private func handleAppDidBecomeActive() {
+        log("App 进入前台, currentState=\(currentState), hasAcceptedViaSystemUI=\(hasAcceptedViaSystemUI)")
+        
+        // 如果用户已在系统界面接听（hasAcceptedViaSystemUI=true），需要：
+        // 1. 关闭系统来电界面
+        // 2. present 通话控制器
+        // 即使状态已经变为 connecting/incoming 之后被接听，也要处理
+        let needsDismissSystemUI = hasAcceptedViaSystemUI || currentState == .incoming
+        
+        guard needsDismissSystemUI,
+              let remoteUser = currentRemoteUser,
+              let callType = currentCallType else {
+            log("App 进入前台：无需处理（状态已变化且用户未在系统界面接听）")
+            return
+        }
+        
+        // 1. 关闭系统来电界面（CallKit 或 LiveCommunicationKit）
+        log("App 进入前台: useLiveCommunicationKit=\(useLiveCommunicationKit), useSystemCallUI=\(useSystemCallUI)")
+        if useLiveCommunicationKit {
+            if #available(iOS 17.4, *) {
+                log("App 进入前台: 关闭 LiveCommunicationKit 来电界面")
+                LiveCommunicationKitManager.shared.dismissIncomingCallUI()
+            }
+        } else if useSystemCallUI {
+            log("App 进入前台: 关闭 CallKit 来电界面")
+            CallKitManager.shared.dismissIncomingCallUI()
+        }
+        
+        // 2. 根据是否已在系统界面接听，决定显示来电弹窗还是聊天控制器
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            if self.hasAcceptedViaSystemUI {
+                // 用户已在系统来电界面点击了接听 → 显示聊天控制器
+                log("App 进入前台：用户已在系统界面接听，显示聊天控制器")
+                self.uiDelegate.didAcceptIncomingCall(from: remoteUser, callType: callType)
+            } else {
+                // 用户还未接听 → 显示来电弹窗
+                if let channel = self.currentChannel,
+                   let token = self.currentToken {
+                    log("App 进入前台：用户未接听，显示来电弹窗")
+                    self.uiDelegate.didShowIncomingCallUIAfterForeground(
+                        from: remoteUser,
+                        callType: callType,
+                        channelName: channel,
+                        token: token
+                    )
+                }
+            }
+        }
     }
     
     // MARK: - 通话框架选择
@@ -260,8 +332,9 @@ public class CallManager {
     // MARK: - 公共方法 - 接听/拒绝/挂断
     
     /// 接听来电（在收到 didReceiveIncomingCall 后调用）
-    public func acceptCall(completion: ((Bool) -> Void)? = nil) {
-        log("接听来电")
+    /// - Parameter skipPresentUI: 是否跳过 present 控制器（当 App 层已自行 present 时传 true）
+    public func acceptCall(skipPresentUI: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        log("接听来电, skipPresentUI=\(skipPresentUI), currentState=\(currentState)")
         guard currentState == .incoming,
               let channel = currentChannel,
               let callType = currentCallType,
@@ -292,11 +365,25 @@ public class CallManager {
                 self.signalDelegate?.sendAcceptResponse(toUserId: remoteUser.userId) { _ in }
                 self.currentState = .connecting
                 
+                // ========== 通知 CallKit/LiveCommunicationKit 停止来电界面 ==========
+                // 当用户在 App 内点击"接受"时，需要通知系统来电界面通话已接听
+                if self.useLiveCommunicationKit {
+                    if #available(iOS 17.4, *) {
+                        LiveCommunicationKitManager.shared.markCallAccepted()
+                    }
+                } else if self.useSystemCallUI {
+                    CallKitManager.shared.markCallAccepted()
+                }
                 
-                // ========== 通知 CallKit 停止来电界面 ==========
-                // 当用户在 App 内点击"接受"时，需要通知 CallKit/LiveCommunicationKit 通话已接听
-                // 这样系统来电界面才会停止震动
-//                CallKitManager.shared.markCallAccepted()
+                // ========== 通知 App 层 present 通话控制器（除非已跳过） ==========
+                if !skipPresentUI {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.uiDelegate.didAcceptIncomingCall(from: remoteUser, callType: callType)
+                    }
+                } else {
+                    self.log("接听: skipPresentUI=true，跳过 present 控制器")
+                }
                 
                 completion?(true)
             case .failure(let error):
@@ -601,6 +688,7 @@ public class CallManager {
         // 统一清理：离开频道、悬浮窗、画中画（必须在重置 currentCallType 之前）
         cleanupAllResources()
         isCaller = false
+        hasAcceptedViaSystemUI = false
         currentState = .idle
         currentCallType = nil
         currentChannel = nil
@@ -889,7 +977,9 @@ extension CallManager: CallKitManagerDelegate {
     
     /// 用户在系统来电界面点击了接听
     public func callKitManagerDidAcceptCall() {
-        log("CallKit: 用户接听")
+        log("CallKit: 用户在系统来电界面点击了接听")
+        // 标记用户已在系统界面接听
+        hasAcceptedViaSystemUI = true
         acceptCall()
     }
     
@@ -918,7 +1008,10 @@ extension CallManager: LiveCommunicationKitManagerDelegate {
     
     /// 用户点击了接听
     public func liveCommunicationKitDidAcceptCall(uuid: UUID, completion: @escaping (Bool) -> Void) {
-        log("LiveCommunicationKit: 用户接听")
+        log("LiveCommunicationKit: 用户在来电界面点击了接听, currentState=\(currentState)")
+        // 标记用户已在系统界面接听
+        hasAcceptedViaSystemUI = true
+        log("LiveCommunicationKit: 设置 hasAcceptedViaSystemUI=true, 开始调用 acceptCall")
         acceptCall(completion: completion)
     }
     

@@ -37,6 +37,17 @@ public protocol CallUIDelegate: AnyObject {
     func localAudioMutedDidChange(_ muted: Bool)
     /// 本地用户视频静音状态变化
     func localVideoMutedDidChange(_ muted: Bool)
+    /// App 进入前台时，系统来电界面已关闭，需要展示自定义来电界面
+    /// - Parameters:
+    ///   - user: 来电用户
+    ///   - callType: 通话类型
+    ///   - channelName: 频道名
+    ///   - token: Token
+    func didShowIncomingCallUIAfterForeground(from user: CallUser, callType: CallType, channelName: String, token: String)
+    /// 用户在系统来电界面或自定义来电界面点击了接听，需要 present 通话控制器
+    /// - Parameter user: 来电用户
+    /// - Parameter callType: 通话类型
+    func didAcceptIncomingCall(from user: CallUser, callType: CallType)
 }
 
 /// 提供默认空实现，方便子类只重写部分方法
@@ -55,4 +66,6 @@ public extension CallUIDelegate {
     func remoteUserDidToggleAudio(_ user: CallUser, muted: Bool) {}
     func localAudioMutedDidChange(_ muted: Bool) {}
     func localVideoMutedDidChange(_ muted: Bool) {}
+    func didShowIncomingCallUIAfterForeground(from user: CallUser, callType: CallType, channelName: String, token: String) {}
+    func didAcceptIncomingCall(from user: CallUser, callType: CallType) {}
 }

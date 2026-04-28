@@ -228,14 +228,7 @@ extension ExampleAppCallUIDelegate: IncomingCallViewDelegate {
     func incomingCallViewDidAccept(_ view: BaseIncomingCallView) {
         IncomingCallManager.shared.hide()
         CallManager.shared.acceptCall()
-        
-        // 跳转到通话界面
-        if let topVC = UIApplication.shared.visibleViewController {
-            let callType = CallManager.shared.getCurrentCallType ?? .voice
-            let callVC: BaseCallViewController = callType == .video ? SingleVideoCallViewController() : SingleAudioCallViewController()
-            callVC.modalPresentationStyle = .fullScreen
-            topVC.present(callVC, animated: true)
-        }
+        // 注意：didAcceptIncomingCall 回调会在 acceptCall 成功内部调用 present
     }
     
     func incomingCallViewDidReject(_ view: BaseIncomingCallView) {
@@ -244,11 +237,45 @@ extension ExampleAppCallUIDelegate: IncomingCallViewDelegate {
     }
     
     func incomingCallViewDidTap(_ view: BaseIncomingCallView) {
-        // 点击来电弹窗，跳转到通话界面（不接听）
+        // 点击来电弹窗，跳转到通话界面（不接听，显示等待界面）
         IncomingCallManager.shared.hide()
         
         if let topVC = UIApplication.shared.visibleViewController {
             let callType = CallManager.shared.getCurrentCallType ?? .voice
+            let callVC: BaseCallViewController = callType == .video ? SingleVideoCallViewController() : SingleAudioCallViewController()
+            callVC.modalPresentationStyle = .fullScreen
+            topVC.present(callVC, animated: true)
+        }
+    }
+}
+
+// MARK: - 新增的来电处理方法
+
+extension ExampleAppCallUIDelegate {
+    
+    /// App 进入前台时，系统来电界面已关闭，需要展示自定义来电界面
+    func didShowIncomingCallUIAfterForeground(from user: CallUser, callType: CallType, channelName: String, token: String) {
+        print("[UI Delegate] App 进入前台，显示自定义来电界面: \(user.name)")
+        
+        // 隐藏可能存在的通话界面
+        IncomingCallManager.shared.hide()
+        
+        // 展示来电弹窗
+        let incomingView = BaseIncomingCallView()
+        incomingView.configure(with: user, callType: callType)
+        incomingView.delegate = self
+        IncomingCallManager.shared.show(incomingView)
+    }
+    
+    /// 用户点击了接听，需要 present 通话控制器
+    func didAcceptIncomingCall(from user: CallUser, callType: CallType) {
+        print("[UI Delegate] 接听来电 present 控制器: \(user.name), type=\(callType)")
+        
+        // 隐藏来电弹窗
+        IncomingCallManager.shared.hide()
+        
+        // present 通话界面
+        if let topVC = UIApplication.shared.visibleViewController {
             let callVC: BaseCallViewController = callType == .video ? SingleVideoCallViewController() : SingleAudioCallViewController()
             callVC.modalPresentationStyle = .fullScreen
             topVC.present(callVC, animated: true)

@@ -177,6 +177,27 @@ public class CallKitManager: NSObject {
         }
     }
     
+    /// 关闭来电界面（App 进入前台时调用，隐藏系统来电界面）
+    public func dismissIncomingCallUI() {
+        guard CallConfiguration.shared.isCallKitEnabled else { return }
+        guard let uuid = currentCallUUID, isShowingIncomingCall else {
+            print("[CallKitManager] dismissIncomingCallUI: 无需关闭（UUID=\(currentCallUUID?.uuidString ?? "nil"), isShowing=\(isShowingIncomingCall)）")
+            return
+        }
+        print("[CallKitManager] dismissIncomingCallUI: 关闭系统来电界面")
+        // 通过 CXEndCallAction 关闭来电界面
+        let action = CXEndCallAction(call: uuid)
+        let transaction = CXTransaction(action: action)
+        callController.request(transaction) { error in
+            if let error = error {
+                print("[CallKitManager] dismissIncomingCallUI 失败: \(error.localizedDescription)")
+            } else {
+                print("[CallKitManager] dismissIncomingCallUI 成功，系统来电界面已关闭")
+                self.isShowingIncomingCall = false
+            }
+        }
+    }
+    
     /// 主动结束通话（用户在 App 内点击挂断时调用，通知系统更新 UI）
     public func endCall() {
         guard CallConfiguration.shared.isCallKitEnabled else { return }

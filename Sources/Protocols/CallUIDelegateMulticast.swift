@@ -91,4 +91,12 @@ public final class CallUIDelegateMulticast: CallUIDelegate {
     public func localVideoMutedDidChange(_ muted: Bool) {
         allDelegates.forEach { $0.localVideoMutedDidChange(muted) }
     }
+    
+    public func didShowIncomingCallUIAfterForeground(from user: CallUser, callType: CallType, channelName: String, token: String) {
+        allDelegates.forEach { $0.didShowIncomingCallUIAfterForeground(from: user, callType: callType, channelName: channelName, token: token) }
+    }
+    
+    public func didAcceptIncomingCall(from user: CallUser, callType: CallType) {
+        allDelegates.forEach { $0.didAcceptIncomingCall(from: user, callType: callType) }
+    }
 }

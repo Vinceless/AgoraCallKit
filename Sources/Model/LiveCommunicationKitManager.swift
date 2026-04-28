@@ -237,6 +237,43 @@ public class LiveCommunicationKitManager: NSObject {
         currentConversation = nil
         currentCallUUID = nil
     }
+    
+    /// 关闭来电界面（App 进入前台时调用，隐藏 Live Activity 来电界面）
+    public func dismissIncomingCallUI() {
+        print("[LiveCommunicationKitManager] dismissIncomingCallUI: isShowingIncomingCall=\(isShowingIncomingCall), pendingAction=\(pendingAction != nil)")
+        
+        // 标记为不再显示
+        isShowingIncomingCall = false
+        
+        // 如果有待处理的 action，说明用户已经在系统 UI 点击了
+//        if let action = pendingAction {
+//            if action is JoinConversationAction {
+//                // 用户点击了接听，标记为接受并关闭 Live Activity
+//                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击接听，关闭 Live Activity")
+//                action.fulfill()
+//            } else if action is EndConversationAction {
+//                // 用户点击了拒绝，标记为拒绝并关闭 Live Activity
+//                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击拒绝，关闭 Live Activity")
+//                action.fail()
+//            }
+//            pendingAction = nil
+//            return
+//        }
+        
+        // 没有待处理的 action，说明用户还没操作
+        // 尝试强制关闭 Live Activity
+        print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户还未操作，尝试强制关闭")
+        
+        if let conversation = currentConversation {
+            print("[LiveCommunicationKitManager] 使用 currentConversation 结束")
+            let event = Conversation.Event.conversationEnded(Date(), .unanswered)
+            conversationManager?.reportConversationEvent(event, for: conversation)
+            currentConversation = nil
+        } else {
+            print("[LiveCommunicationKitManager] currentConversation 为 nil，尝试结束所有活动通话")
+            // 最后手段：结束所有 active conversations
+        }
+    }
 }
 
 // MARK: - ConversationManagerDelegate
