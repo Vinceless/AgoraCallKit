@@ -229,9 +229,10 @@ public class CallManager {
     ///   - user: 被叫用户信息
     ///   - channelName: 频道名
     ///   - callType: 通话类型
+    ///   - token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     ///   - completion: 完成回调
-    public func startCall(to user: CallUser, channelName: String, callType: CallType, completion: ((Result<Void, Error>) -> Void)? = nil) {
-        log("发起单聊通话: user=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType)")
+    public func startCall(to user: CallUser, channelName: String, callType: CallType, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        log("发起单聊通话: user=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), hasDirectToken=\(token != nil && !token!.isEmpty)")
         guard currentState == .idle else {
             log("⚠️ 发起失败: 当前状态不是 idle")
             failWithError("已有通话进行中", completion: completion)
@@ -255,18 +256,11 @@ public class CallManager {
         completion?(.success(()))
         
         // 异步获取 Token、加入频道、发送信令
-        tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
+        joinChannelWithToken(channelName: channelName, userId: userId, callType: callType, directToken: token) { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .success(let token):
                 self.currentToken = token
-                self.log("获取 Token 成功, 加入频道...")
-                let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
-                if !success {
-                    self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
-                    self.failWithError("加入频道失败")
-                    return
-                }
                 self.signalDelegate?.sendCallRequest(toUserId: user.userId, channelName: channelName, token: token, callType: callType) { result in
                     if case .failure(let error) = result {
                         self.log("⚠️ 发送信令失败: \(error.localizedDescription)")
@@ -286,9 +280,10 @@ public class CallManager {
     /// - Parameters:
     ///   - channelName: 频道名
     ///   - callType: 通话类型
+    ///   - token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     ///   - completion: 完成回调
-    public func startGroupCall(channelName: String, callType: CallType, completion: ((Result<Void, Error>) -> Void)? = nil) {
-        log("发起群聊通话: channel=\(channelName), type=\(callType)")
+    public func startGroupCall(channelName: String, callType: CallType, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        log("发起群聊通话: channel=\(channelName), type=\(callType), hasDirectToken=\(token != nil && !token!.isEmpty)")
         guard currentState == .idle else {
             log("⚠️ 发起失败: 当前状态不是 idle")
             completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "已有通话进行中"])))
@@ -311,19 +306,11 @@ public class CallManager {
         completion?(.success(()))
         
         // 异步获取 Token、加入频道
-        tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
+        joinChannelWithToken(channelName: channelName, userId: userId, callType: callType, directToken: token) { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .success(let token):
                 self.currentToken = token
-                self.log("获取 Token 成功, 加入频道...")
-                let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
-                // 主叫加入频道后保持 .calling 状态，继续播放呼叫等待音
-                // 状态会在对方接听时变为 .connecting → .connected
-                if !success {
-                    self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
-                    self.failWithError("加入频道失败")
-                }
             case .failure(let error):
                 self.log("⚠️ 获取 Token 失败: \(error.localizedDescription)")
                 self.failWithError(error.localizedDescription)
@@ -335,8 +322,9 @@ public class CallManager {
     
     /// 接听来电（在收到 didReceiveIncomingCall 后调用）
     /// - Parameter skipPresentUI: 是否跳过 present 控制器（当 App 层已自行 present 时传 true）
-    public func acceptCall(skipPresentUI: Bool = false, completion: ((Bool) -> Void)? = nil) {
-        log("接听来电, skipPresentUI=\(skipPresentUI), currentState=\(currentState)")
+    /// - Parameter token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
+    public func acceptCall(skipPresentUI: Bool = false, token: String? = nil, completion: ((Bool) -> Void)? = nil) {
+        log("接听来电, skipPresentUI=\(skipPresentUI), hasDirectToken=\(token != nil && !token!.isEmpty), currentState=\(currentState)")
         guard currentState == .incoming,
               let channel = currentChannel,
               let callType = currentCallType,
@@ -349,21 +337,13 @@ public class CallManager {
         
         stopCallingTimeout()
         isCaller = false
-        tokenProvider?.fetchToken(channelName: channel, userId: userId) { [weak self] result in
+        joinChannelWithToken(channelName: channel, userId: userId, callType: callType, directToken: token) { [weak self] result in
             guard let self = self else {
                 completion?(false)
                 return
             }
             switch result {
-            case .success(let token):
-                self.log("接听: 获取 Token 成功, 加入频道...")
-                let success = self.engine.joinChannel(channel, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
-                if !success {
-                    self.log("⚠️ 接听: 加入频道失败")
-                    self.failWithError("加入频道失败")
-                    completion?(false)
-                    return
-                }
+            case .success:
                 self.signalDelegate?.sendAcceptResponse(toUserId: remoteUser.userId) { _ in }
                 self.currentState = .connecting
                 
@@ -430,6 +410,48 @@ public class CallManager {
         disconnectCall(error: nil, endedReason: .remoteEnded)
     }
     
+    // MARK: - 公共方法 - 内部辅助
+
+    /// 使用 token 加入频道的统一处理逻辑
+    /// - Parameters:
+    ///   - channelName: 频道名
+    ///   - userId: 用户 ID
+    ///   - callType: 通话类型
+    ///   - directToken: 可选直接传入的 token，如果不为 nil 且非空字符串则直接使用
+    ///   - completion: 完成回调，返回实际使用的 token 或错误
+    private func joinChannelWithToken(channelName: String, userId: String, callType: CallType, directToken: String?, completion: @escaping (Result<String, Error>) -> Void) {
+        // 如果传入了有效的 token，直接使用
+        if let token = directToken, !token.isEmpty {
+            self.log("使用直接传入的 Token, 加入频道...")
+            let success = engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
+            if !success {
+                self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
+                completion(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
+                return
+            }
+            completion(.success(token))
+            return
+        }
+
+        // 否则通过 tokenProvider 获取
+        tokenProvider?.fetchToken(channelName: channelName, userId: userId) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let token):
+                self.log("通过 tokenProvider 获取 Token 成功, 加入频道...")
+                let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
+                if !success {
+                    self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
+                    completion(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
+                    return
+                }
+                completion(.success(token))
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+
     // MARK: - 公共方法 - 状态查询
     
     /// 获取当前通话时长（秒）
