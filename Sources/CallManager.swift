@@ -55,7 +55,13 @@ public class CallManager {
     private var currentCallType: CallType?
     private var currentChannel: String?
     private var currentToken: String?
+    
+    /// CallKit/LiveCommunicationKit 使用的 UUID（用于系统来电界面）
     private var currentCallUUID: UUID?
+    
+    /// 服务端返回的通话标识符（用于信令关联）
+    public private(set) var currentCallID: String?
+    
     public var localUser: CallUser?
     public var currentRemoteUser: CallUser?
     
@@ -229,10 +235,11 @@ public class CallManager {
     ///   - user: 被叫用户信息
     ///   - channelName: 频道名
     ///   - callType: 通话类型
+    ///   - callID: 服务端返回的通话标识符（用于后续信令关联）
     ///   - token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     ///   - completion: 完成回调
-    public func startCall(to user: CallUser, channelName: String, callType: CallType, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
-        log("发起单聊通话: user=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), hasDirectToken=\(token != nil && !token!.isEmpty)")
+    public func startCall(to user: CallUser, channelName: String, callType: CallType, callID: String? = nil, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        log("发起单聊通话: user=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), callID=\(callID ?? "nil"), hasDirectToken=\(token != nil && !token!.isEmpty)")
         guard currentState == .idle else {
             log("⚠️ 发起失败: 当前状态不是 idle")
             failWithError("已有通话进行中", completion: completion)
@@ -249,6 +256,7 @@ public class CallManager {
         currentCallType = callType
         currentRemoteUser = user
         currentChannel = channelName
+        currentCallID = callID  // 缓存服务端 callID
         currentState = .calling
         startCallingTimeout()
         
@@ -261,7 +269,8 @@ public class CallManager {
             switch result {
             case .success(let token):
                 self.currentToken = token
-                self.signalDelegate?.sendCallRequest(toUserId: user.userId, channelName: channelName, token: token, callType: callType) { result in
+                let effectiveCallID = self.currentCallID ?? ""
+                self.signalDelegate?.sendCallRequest(callID: effectiveCallID, toUserId: user.userId, channelName: channelName, token: token, callType: callType) { result in
                     if case .failure(let error) = result {
                         self.log("⚠️ 发送信令失败: \(error.localizedDescription)")
                         self.failWithError(error.localizedDescription)
@@ -324,7 +333,7 @@ public class CallManager {
     /// - Parameter skipPresentUI: 是否跳过 present 控制器（当 App 层已自行 present 时传 true）
     /// - Parameter token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     public func acceptCall(skipPresentUI: Bool = false, token: String? = nil, completion: ((Bool) -> Void)? = nil) {
-        log("接听来电, skipPresentUI=\(skipPresentUI), hasDirectToken=\(token != nil && !token!.isEmpty), currentState=\(currentState)")
+        log("接听来电, skipPresentUI=\(skipPresentUI), hasDirectToken=\(token != nil && !token!.isEmpty), currentState=\(currentState), callID=\(currentCallID ?? "nil")")
         guard currentState == .incoming,
               let channel = currentChannel,
               let callType = currentCallType,
@@ -344,7 +353,8 @@ public class CallManager {
             }
             switch result {
             case .success:
-                self.signalDelegate?.sendAcceptResponse(toUserId: remoteUser.userId) { _ in }
+                let effectiveCallID = self.currentCallID ?? ""
+                self.signalDelegate?.sendAcceptResponse(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
                 self.currentState = .connecting
                 
                 // ========== 通知 CallKit/LiveCommunicationKit 停止来电界面 ==========
@@ -380,31 +390,34 @@ public class CallManager {
     
     /// 拒绝来电
     public func rejectCall() {
-        log("拒绝来电")
+        log("拒绝来电, callID=\(currentCallID ?? "nil")")
         guard currentState == .incoming, let remoteUser = currentRemoteUser else {
             log("⚠️ 拒绝失败: guard 不通过 (state=\(currentState), remoteUser=\(currentRemoteUser))")
             return
         }
         stopCallingTimeout()
-        signalDelegate?.sendRejectResponse(toUserId: remoteUser.userId, reason: nil) { _ in }
+        let effectiveCallID = currentCallID ?? ""
+        signalDelegate?.sendRejectResponse(callID: effectiveCallID, toUserId: remoteUser.userId, reason: nil) { _ in }
         disconnectCall(error: nil)
     }
     
     /// 挂断当前通话
     public func hangUp() {
-        log("挂断通话")
+        log("挂断通话, callID=\(currentCallID ?? "nil")")
         guard currentState != .idle, currentState != .disconnected else {
             log("⚠️ 挂断忽略: 当前状态=\(currentState)")
             return
         }
         stopCallingTimeout()
         
+        let effectiveCallID = currentCallID ?? ""
+        
         if let remoteUser = currentRemoteUser, currentState == .connected || currentState == .reconnecting {
-            log("发送挂断信令给 userId=\(remoteUser.userId)")
-            signalDelegate?.sendHangupSignal(toUserId: remoteUser.userId) { _ in }
+            log("发送挂断信令给 userId=\(remoteUser.userId), callID=\(effectiveCallID)")
+            signalDelegate?.sendHangupSignal(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
         } else if let remoteUser = currentRemoteUser, currentState == .calling || currentState == .connecting || currentState == .incoming {
-            log("发送取消信令给 userId=\(remoteUser.userId)")
-            signalDelegate?.sendCancelSignal(toUserId: remoteUser.userId) { _ in }
+            log("发送取消信令给 userId=\(remoteUser.userId), callID=\(effectiveCallID)")
+            signalDelegate?.sendCancelSignal(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
         }
         
         disconnectCall(error: nil, endedReason: .remoteEnded)
@@ -506,13 +519,28 @@ public class CallManager {
     // MARK: - 信令接收（由 App 层信令模块调用）
     
     /// 收到单聊来电（不带系统UI完成回调，用于非VoIP推送场景）
-    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal) {
-        receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType, systemUICompletion: { _ in })
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - user: 来电用户信息
+    ///   - channelName: 频道名
+    ///   - token: 声网 Token
+    ///   - callType: 通话类型
+    ///   - incomingType: 来电类型
+    public func receiveIncomingCall(callID: String? = nil, from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal) {
+        receiveIncomingCall(callID: callID, from: user, channelName: channelName, token: token, callType: callType, incomingType: incomingType, systemUICompletion: { _ in })
     }
     
     /// 收到单聊来电
-    public func receiveIncomingCall(from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal, systemUICompletion: @escaping (Bool) -> Void) {
-        log("收到来电: from=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType)")
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - user: 来电用户信息
+    ///   - channelName: 频道名
+    ///   - token: 声网 Token
+    ///   - callType: 通话类型
+    ///   - incomingType: 来电类型
+    ///   - systemUICompletion: 系统来电界面完成回调
+    public func receiveIncomingCall(callID: String? = nil, from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal, systemUICompletion: @escaping (Bool) -> Void) {
+        log("收到来电: from=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), callID=\(callID ?? "nil")")
         guard user.userId != userProvider?.currentUserId else {
             log("⚠️ 来电忽略: 是自己")
             return
@@ -528,12 +556,15 @@ public class CallManager {
             } else {
                 // 不同房间的来电，自动拒绝
                 log("⚠️ 来电忙碌: 当前状态=\(currentState), 不同房间，自动拒绝")
-//                signalDelegate?.sendRejectResponse(toUserId: user.userId, reason: "busy") { _ in }
+                if let callID = callID {
+                    signalDelegate?.sendRejectResponse(callID: callID, toUserId: user.userId, reason: "busy") { _ in }
+                }
             }
             return
         }
         
         isCaller = false
+        currentCallID = callID  // 缓存服务端 callID
         currentState = .incoming
         currentCallType = callType
         currentChannel = channelName
@@ -583,8 +614,11 @@ public class CallManager {
     }
     
     /// 对方接受通话
-    public func onCallAccepted(fromUserId: String) {
-        log("对方接受: fromUserId=\(fromUserId)")
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - fromUserId: 接受方用户ID
+    public func onCallAccepted(callID: String, fromUserId: String) {
+        log("对方接受: callID=\(callID), fromUserId=\(fromUserId)")
         guard currentState == .calling || currentState == .connecting else {
             log("⚠️ 接受忽略: 当前状态=\(currentState)")
             return
@@ -593,13 +627,21 @@ public class CallManager {
         if currentRemoteUser?.userId != fromUserId {
             log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
         }
+        // 更新 callID（如果之前为空）
+        if currentCallID == nil {
+            currentCallID = callID
+        }
         stopCallingTimeout()
         currentState = .connecting
     }
     
     /// 对方拒绝通话
-    public func onCallRejected(fromUserId: String, reason: String?) {
-        log("对方拒绝: fromUserId=\(fromUserId), reason=\(reason ?? "nil")")
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - fromUserId: 拒绝方用户ID
+    ///   - reason: 拒绝原因
+    public func onCallRejected(callID: String, fromUserId: String, reason: String?) {
+        log("对方拒绝: callID=\(callID), fromUserId=\(fromUserId), reason=\(reason ?? "nil")")
         // 允许从 calling/connecting/connected 状态拒绝（对方可能先加入频道再拒绝）
         guard currentState == .calling || currentState == .connecting || currentState == .connected else {
             log("⚠️ 拒绝忽略: 当前状态=\(currentState)")
@@ -614,8 +656,11 @@ public class CallManager {
     }
     
     /// 对方挂断
-    public func onCallHangup(fromUserId: String) {
-        log("对方挂断: fromUserId=\(fromUserId)")
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - fromUserId: 挂断方用户ID
+    public func onCallHangup(callID: String, fromUserId: String) {
+        log("对方挂断: callID=\(callID), fromUserId=\(fromUserId)")
         guard currentState != .idle && currentState != .disconnected else {
             log("⚠️ 挂断忽略: 当前状态=\(currentState)")
             return
@@ -629,8 +674,11 @@ public class CallManager {
     }
     
     /// 对方取消通话
-    public func onCallCanceled(fromUserId: String) {
-        log("对方取消: fromUserId=\(fromUserId)")
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - fromUserId: 取消方用户ID
+    public func onCallCanceled(callID: String, fromUserId: String) {
+        log("对方取消: callID=\(callID), fromUserId=\(fromUserId)")
         guard currentState == .incoming || currentState == .calling else {
             log("⚠️ 取消忽略: 当前状态=\(currentState)")
             return
@@ -643,8 +691,11 @@ public class CallManager {
         disconnectCall(error: nil)
     }
     
-    /// 对方呼叫失败
-    public func onCallFailed(fromUserId: String, reason: String?) {
+    /// 呼叫对方失败
+    /// - Parameters:
+    ///   - callID: 服务端返回的通话标识符
+    ///   - fromUserId: 呼叫失败用户ID
+    public func onCallFailed(callID: String, fromUserId: String, reason: String?) {
         log("对方呼叫失败: fromUserId=\(fromUserId), reason=\(reason ?? "未知原因")")
         guard currentState != .idle && currentState != .disconnected && currentState != .failed else {
             log("⚠️ 呼叫失败忽略: 当前状态=\(currentState)")
@@ -726,6 +777,7 @@ public class CallManager {
         currentRemoteUser = nil
         currentToken = nil
         currentCallUUID = nil
+        currentCallID = nil  // 清除服务端 callID
         localUser = nil
         callStartTime = nil
         remoteUsers.removeAll()
@@ -795,14 +847,14 @@ public class CallManager {
 private class CallManagerSignalListener: CallSignalListener {
     weak var manager: CallManager?
     
-    func onReceiveCall(fromUserId: String, channelName: String, token: String, callType: CallType) {
+    func onReceiveCall(callID: String, fromUserId: String, channelName: String, token: String, callType: CallType) {
         let user = CallUser(userId: fromUserId, name: fromUserId)
-        manager?.receiveIncomingCall(from: user, channelName: channelName, token: token, callType: callType) { _ in }
+        manager?.receiveIncomingCall(callID: callID, from: user, channelName: channelName, token: token, callType: callType) { _ in }
     }
-    func onCallAccepted(fromUserId: String) { manager?.onCallAccepted(fromUserId: fromUserId) }
-    func onCallRejected(fromUserId: String, reason: String?) { manager?.onCallRejected(fromUserId: fromUserId, reason: reason) }
-    func onCallHangup(fromUserId: String) { manager?.onCallHangup(fromUserId: fromUserId) }
-    func onCallCanceled(fromUserId: String) { manager?.onCallCanceled(fromUserId: fromUserId) }
+    func onCallAccepted(callID: String, fromUserId: String) { manager?.onCallAccepted(callID: callID, fromUserId: fromUserId) }
+    func onCallRejected(callID: String, fromUserId: String, reason: String?) { manager?.onCallRejected(callID: callID, fromUserId: fromUserId, reason: reason) }
+    func onCallHangup(callID: String, fromUserId: String) { manager?.onCallHangup(callID: callID, fromUserId: fromUserId) }
+    func onCallCanceled(callID: String, fromUserId: String) { manager?.onCallCanceled(callID: callID, fromUserId: fromUserId) }
 }
 
 // MARK: - AgoraEngineDelegate

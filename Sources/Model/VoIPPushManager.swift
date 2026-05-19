@@ -28,6 +28,8 @@ public protocol VoIPPushPayloadDelegate: AnyObject {
 
 /// 来电信息结构体，由 App 层从推送 payload 中解析后返回给 SDK
 public struct CallIncomingInfo {
+    /// 服务端返回的通话标识符（用于后续信令关联）
+    public let callID: String
     /// 来电方用户ID
     public let fromUserId: String
     /// 频道名
@@ -41,7 +43,8 @@ public struct CallIncomingInfo {
     /// 来电方头像 URL
     public let callerAvatar: String
     
-    public init(fromUserId: String, channelName: String, token: String, callType: CallType, callerName: String, callerAvatar: String) {
+    public init(callID: String, fromUserId: String, channelName: String, token: String, callType: CallType, callerName: String, callerAvatar: String) {
+        self.callID = callID
         self.fromUserId = fromUserId
         self.channelName = channelName
         self.token = token
@@ -160,6 +163,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
         )
         
         CallManager.shared.receiveIncomingCall(
+            callID: info.callID,
             from: remoteUser,
             channelName: info.channelName,
             token: info.token,
