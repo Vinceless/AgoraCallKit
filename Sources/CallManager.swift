@@ -1021,6 +1021,8 @@ public class CallManager {
     /// 统一清理所有通话资源（离开频道、悬浮窗、画中画）
     private func cleanupAllResources() {
         log("cleanupAllResources: callType=\(currentCallType?.rawValue ?? "nil")")
+        // 重置扬声器为关闭状态，避免状态残留到下次通话
+        engine.setSpeakerEnabled(false)
         // 离开频道，停止音视频流
         engine.leaveChannel()
         // 停止视频预览

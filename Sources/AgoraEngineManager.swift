@@ -138,6 +138,8 @@ public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
         let result = engine.joinChannel(byToken: token, channelId: channel, uid: uid, mediaOptions: option)
         if result == 0 {
             currentChannel = channel
+            // 初始化为听筒模式，与 UI 按钮默认「扬声器已关」保持一致
+//            engine.setEnableSpeakerphone(false)
             return true
         }
         return false
