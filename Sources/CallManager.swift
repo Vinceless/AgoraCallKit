@@ -31,25 +31,87 @@ public class CallManager {
     
     public let engine = AgoraEngineManager.shared
     
+    // MARK: - 线程安全
+    /// 保护所有状态属性读写的锁，RTC 引擎回调（非主线程）和主线程用户操作
+    private let stateLock = NSLock()
+    
     // MARK: - 内部状态
+    
+    /// 是否主叫方。仅从主线程写入，不需要锁保护
     public private(set) var isCaller: Bool = false
     
-    public var currentState: CallState = .idle {
-        didSet {
-            if oldValue != currentState {
-                log("状态变化: \(oldValue) → \(currentState)")
-                let state = currentState
-                // 声音/震动处理
-                handleSoundForStateChange(from: oldValue, to: state)
-                if Thread.isMainThread {
-                    uiDelegate.callStateDidChange(state)
-                } else {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.uiDelegate.callStateDidChange(state)
-                    }
+    /// 当前通话状态的锁保护 backing store
+    private var _currentState: CallState = .idle
+    
+    /// 当前通话状态（线程安全）
+    public var currentState: CallState {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return _currentState
+        }
+        set {
+            stateLock.lock()
+            let oldValue = _currentState
+            _currentState = newValue
+            stateLock.unlock()
+            guard oldValue != newValue else { return }
+            // didSet 逻辑：锁外执行，避免死锁
+            log("状态变化: \(oldValue) → \(newValue)")
+            handleSoundForStateChange(from: oldValue, to: newValue)
+            if Thread.isMainThread {
+                uiDelegate.callStateDidChange(newValue)
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.uiDelegate.callStateDidChange(newValue)
                 }
             }
         }
+    }
+    
+    /// 原子地执行状态转换：仅当当前状态等于 expected 时才切换到 newState。
+    /// - Returns: true 表示转换成功，false 表示当前状态不匹配 expected
+    private func transitionState(from expected: CallState, to newState: CallState) -> Bool {
+        stateLock.lock()
+        let oldValue = _currentState
+        guard oldValue == expected else {
+            stateLock.unlock()
+            return false
+        }
+        _currentState = newState
+        stateLock.unlock()
+        // didSet 逻辑在锁外执行
+        if oldValue != newState {
+            log("状态变化: \(oldValue) → \(newState)")
+            handleSoundForStateChange(from: oldValue, to: newState)
+            if Thread.isMainThread {
+                uiDelegate.callStateDidChange(newState)
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.uiDelegate.callStateDidChange(newState)
+                }
+            }
+        }
+        return true
+    }
+    
+    /// 锁保护地设置状态（无前置条件检查），返回旧值
+    private func setStateUnconditionally(_ newState: CallState) -> CallState {
+        stateLock.lock()
+        let oldValue = _currentState
+        _currentState = newState
+        stateLock.unlock()
+        guard oldValue != newState else { return oldValue }
+        log("状态变化: \(oldValue) → \(newState)")
+        handleSoundForStateChange(from: oldValue, to: newState)
+        if Thread.isMainThread {
+            uiDelegate.callStateDidChange(newState)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.uiDelegate.callStateDidChange(newState)
+            }
+        }
+        return oldValue
     }
     
     private var currentCallType: CallType?
@@ -75,7 +137,6 @@ public class CallManager {
     // 群组通话用户列表
     private var remoteUsers: [UInt: CallUser] = [:]
     
-    // 在 CallManager 类中新增属性
     private var hasReportedConnected = false
     
     /// 用户是否通过系统来电界面（CallKit/LiveCommunicationKit）点击了接听
@@ -240,11 +301,6 @@ public class CallManager {
     ///   - completion: 完成回调
     public func startCall(to user: CallUser, channelName: String, callType: CallType, callID: String? = nil, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
         log("发起单聊通话: user=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), callID=\(callID ?? "nil"), hasDirectToken=\(token != nil && !token!.isEmpty)")
-        guard currentState == .idle else {
-            log("⚠️ 发起失败: 当前状态不是 idle")
-            failWithError("已有通话进行中", completion: completion)
-            return
-        }
         
         guard let userId = userProvider?.currentUserId else {
             log("⚠️ 发起失败: 无法获取当前用户ID")
@@ -252,12 +308,18 @@ public class CallManager {
             return
         }
         
+        // 原子地检查 idle 并切换到 calling，防止竞态
+        guard transitionState(from: .idle, to: .calling) else {
+            log("⚠️ 发起失败: 当前状态不是 idle")
+            failWithError("已有通话进行中", completion: completion)
+            return
+        }
+        
         isCaller = true
         currentCallType = callType
         currentRemoteUser = user
         currentChannel = channelName
-        currentCallID = callID  // 缓存服务端 callID
-        currentState = .calling
+        currentCallID = callID
         startCallingTimeout()
         
         // 立即回调 success，让 App 先弹出通话界面
@@ -293,11 +355,6 @@ public class CallManager {
     ///   - completion: 完成回调
     public func startGroupCall(channelName: String, callType: CallType, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
         log("发起群聊通话: channel=\(channelName), type=\(callType), hasDirectToken=\(token != nil && !token!.isEmpty)")
-        guard currentState == .idle else {
-            log("⚠️ 发起失败: 当前状态不是 idle")
-            completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "已有通话进行中"])))
-            return
-        }
         
         guard let userId = userProvider?.currentUserId else {
             log("⚠️ 发起失败: 无法获取当前用户ID")
@@ -305,9 +362,15 @@ public class CallManager {
             return
         }
         
+        // 原子地检查 idle 并切换到 calling
+        guard transitionState(from: .idle, to: .calling) else {
+            log("⚠️ 发起失败: 当前状态不是 idle")
+            completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "已有通话进行中"])))
+            return
+        }
+        
         isCaller = true
         currentCallType = callType
-        currentState = .calling
         currentChannel = channelName
         startCallingTimeout()
         
@@ -489,8 +552,12 @@ public class CallManager {
     /// 获取当前远程用户（单聊）
     public var getCurrentRemoteUser: CallUser? { currentRemoteUser }
     
-    /// 获取群组所有远端用户
-    public func getAllRemoteUsers() -> [CallUser] { Array(remoteUsers.values) }
+    /// 获取群组所有远端用户（线程安全快照）
+    public func getAllRemoteUsers() -> [CallUser] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return Array(remoteUsers.values)
+    }
     
     // MARK: - 公共方法 - 音视频控制（转发给引擎）
     public func muteAudio(_ mute: Bool) {
@@ -712,14 +779,37 @@ public class CallManager {
     
     // MARK: - 内部方法
     
-    /// 统一的通话断开处理：先设置 disconnected/failed 状态通知 UI，延迟后再清理资源回 idle
+    /// 统一的通话断开处理：原子检查状态 + 设置 disconnected/failed，防止多线程重复进入
     private func disconnectCall(error: Error?, endedReason: CallEndedReason = .remoteEnded) {
         log("disconnectCall: error=\(error?.localizedDescription ?? "nil"), reason=\(endedReason)")
-        guard currentState != .disconnected && currentState != .failed && currentState != .idle else {
-            log("disconnectCall 忽略: 已是终态 \(currentState)")
+        
+        let targetState: CallState = (error != nil) ? .failed : .disconnected
+        
+        // 原子地检查并设置状态：阻止两个线程同时进入 disconnectCall
+        stateLock.lock()
+        guard _currentState != .disconnected && _currentState != .failed && _currentState != .idle else {
+            log("disconnectCall 忽略: 已是终态 \(_currentState)")
+            stateLock.unlock()
             return
         }
-        // 通知系统通话结束（仅在启用系统来电界面时）
+        let oldState = _currentState
+        _currentState = targetState
+        stateLock.unlock()
+        
+        // 状态变更的 didSet 逻辑（锁外执行）
+        if oldState != targetState {
+            log("状态变化: \(oldState) → \(targetState)")
+            handleSoundForStateChange(from: oldState, to: targetState)
+            if Thread.isMainThread {
+                uiDelegate.callStateDidChange(targetState)
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.uiDelegate.callStateDidChange(targetState)
+                }
+            }
+        }
+        
+        // 通知系统通话结束（锁外执行，避免与系统框架回调产生死锁）
         if useLiveCommunicationKit {
             if #available(iOS 17.4, *) {
                 LiveCommunicationKitManager.shared.reportCallEnded(reason: error != nil ? "failed" : "ended")
@@ -729,8 +819,7 @@ public class CallManager {
         /// 没有启用LiveCommunicationKit，但启用了CallUI
         CallKitManager.shared.reportCallEnded(reason: endedReason)
         #endif
-        let targetState: CallState = (error != nil) ? .failed : .disconnected
-        currentState = targetState
+        
         let notify = {
             self.log("通知 uiDelegate.didDisconnect")
             self.uiDelegate.didDisconnect(error: error)
@@ -771,6 +860,7 @@ public class CallManager {
         cleanupAllResources()
         isCaller = false
         hasAcceptedViaSystemUI = false
+        hasReportedConnected = false
         currentState = .idle
         currentCallType = nil
         currentChannel = nil
@@ -780,7 +870,9 @@ public class CallManager {
         currentCallID = nil  // 清除服务端 callID
         localUser = nil
         callStartTime = nil
+        stateLock.lock()
         remoteUsers.removeAll()
+        stateLock.unlock()
     }
     
     /// 统一清理所有通话资源（离开频道、悬浮窗、画中画）
@@ -919,7 +1011,9 @@ extension CallManager: AgoraEngineDelegate {
             }
         } else {
             let user = CallUser(userId: "\(uid)", uid: uid, name: "user_\(uid)")
+            stateLock.lock()
             remoteUsers[uid] = user
+            stateLock.unlock()
             DispatchQueue.main.async { [weak self] in
                 self?.uiDelegate.remoteUserDidJoin(user)
             }
@@ -928,8 +1022,15 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, didOfflineOfUid uid: UInt) {
         log("引擎回调: 远端用户离开 uid=\(uid)")
-        if let user = remoteUsers[uid] {
+        // 锁保护 remoteUsers 字典的读写
+        stateLock.lock()
+        let user = remoteUsers[uid]
+        if user != nil {
             remoteUsers.removeValue(forKey: uid)
+        }
+        stateLock.unlock()
+        
+        if let user = user {
             DispatchQueue.main.async { [weak self] in
                 self?.uiDelegate.remoteUserDidLeave(user)
             }
@@ -971,9 +1072,17 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, remoteVideoMuted muted: Bool, ofUid uid: UInt) {
         log("引擎回调: 远端视频静音 muted=\(muted), uid=\(uid)")
+        // 锁保护 remoteUsers 字典的 read-modify-write
+        stateLock.lock()
+        var foundUser: CallUser?
         if var user = remoteUsers[uid] {
             user.isVideoMuted = muted
             remoteUsers[uid] = user
+            foundUser = user
+        }
+        stateLock.unlock()
+        
+        if let user = foundUser {
             DispatchQueue.main.async { [weak self] in
                 self?.uiDelegate.remoteUserDidToggleVideo(user, muted: muted)
             }
@@ -988,9 +1097,17 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, remoteAudioMuted muted: Bool, ofUid uid: UInt) {
         log("引擎回调: 远端音频静音 muted=\(muted), uid=\(uid)")
+        // 锁保护 remoteUsers 字典的 read-modify-write
+        stateLock.lock()
+        var foundUser: CallUser?
         if var user = remoteUsers[uid] {
             user.isAudioMuted = muted
             remoteUsers[uid] = user
+            foundUser = user
+        }
+        stateLock.unlock()
+        
+        if let user = foundUser {
             DispatchQueue.main.async { [weak self] in
                 self?.uiDelegate.remoteUserDidToggleAudio(user, muted: muted)
             }
