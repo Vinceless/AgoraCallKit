@@ -15,7 +15,7 @@ import AudioToolbox
 /// - 接听/挂断音：通话接通/断开时的提示音
 /// - 按键点击音：功能按钮点击音效
 /// - 震动：来电震动反馈
-public class CallSoundService {
+public class CallSoundService: CallSoundServiceProtocol {
     
     public static let shared = CallSoundService()
     

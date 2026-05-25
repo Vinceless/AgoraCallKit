@@ -25,13 +25,14 @@ public enum CallState: Equatable {
 
 public enum CallEndedReason: Equatable {
     case failed            // 通话失败
+    case localEnded        // 本地主动挂断
     case remoteEnded       // 对方结束通话
     case unanswered        // 对方未接听
     case answeredElsewhere // 已在其他设备接听
     case declinedElsewhere // 已在其他设备拒绝
 }
 
-#if DEBUG
+#if !CHINA_APP_STORE
 
 import CallKit
 
@@ -41,6 +42,7 @@ extension CallEndedReason {
     public var cxCallEndedReason: CXCallEndedReason {
         switch self {
         case .failed:            return .failed
+        case .localEnded:        return .remoteEnded  // CallKit 无 localEnded，映射为 remoteEnded
         case .remoteEnded:       return .remoteEnded
         case .unanswered:         return .unanswered
         case .answeredElsewhere: return .answeredElsewhere

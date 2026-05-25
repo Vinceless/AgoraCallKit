@@ -9,28 +9,38 @@ import Foundation
 
 /// 多播委托管理器，使用 NSHashTable 弱引用，支持多个 delegate 同时接收回调
 /// VC 销毁后自动清理，无需手动移除
+/// 线程安全：NSLock 保护 delegates 的读写，RTC 引擎回调（后台线程）和 UI 注册（主线程）可安全并发
 public final class CallUIDelegateMulticast: CallUIDelegate {
     
+    private let lock = NSLock()
     private let delegates = NSHashTable<AnyObject>.weakObjects()
     
     /// 添加 delegate（弱引用，重复添加不会重复回调）
     public func add(_ delegate: CallUIDelegate) {
-        guard !contains(delegate) else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !delegates.allObjects.contains(where: { $0 === delegate as AnyObject }) else { return }
         delegates.add(delegate)
     }
     
     /// 移除 delegate
     public func remove(_ delegate: CallUIDelegate) {
+        lock.lock()
         delegates.remove(delegate)
+        lock.unlock()
     }
     
     /// 是否已包含某个 delegate
     public func contains(_ delegate: CallUIDelegate) -> Bool {
-        return allDelegates.contains { $0 === delegate }
+        lock.lock()
+        defer { lock.unlock() }
+        return delegates.allObjects.contains { $0 === delegate as AnyObject }
     }
     
-    /// 当前所有存活的 delegate
+    /// 当前所有存活的 delegate（线程安全快照）
     public var allDelegates: [CallUIDelegate] {
+        lock.lock()
+        defer { lock.unlock() }
         return delegates.allObjects.compactMap { $0 as? CallUIDelegate }
     }
     

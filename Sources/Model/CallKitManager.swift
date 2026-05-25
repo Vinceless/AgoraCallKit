@@ -6,7 +6,7 @@
 //  收到 VoIP 推送后，通过 CXProvider 向系统报告来电，显示系统来电 UI
 //  用户在系统界面上接听/拒绝后，通过 CXProviderDelegate 回调通知 CallManager
 //  iOS区不给用，屏蔽了
-#if DEBUG
+#if !CHINA_APP_STORE
 import Foundation
 import CallKit
 import AVFoundation

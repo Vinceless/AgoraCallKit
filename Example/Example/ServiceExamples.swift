@@ -78,12 +78,12 @@ class ExampleTokenService: NSObject, TokenProvider {
 /// 示例用户服务
 class ExampleUserService: NSObject, CurrentUserProvider {
     
-    var currentUserId: String {
+    var currentUserId: String? {
         // TODO: 返回当前登录用户的 ID
         return "user_12345"
     }
     
-    var currentUserName: String {
+    var currentUserName: String? {
         // TODO: 返回当前登录用户的昵称
         return "测试用户"
     }
@@ -101,7 +101,7 @@ class ExampleCallServiceManager {
     
     /// 初始化通话服务
     /// - Parameter mode: 系统来电界面配置模式
-    func setup(mode: CallKitMode = .voipPushOnly) {
+    func setup(mode: SystemCallUI = .voipPushOnly) {
         // ========== 1. 配置声网引擎 ==========
         AgoraEngineManager.shared.configure(appId: "your-agora-app-id")
         print("[初始化] 声网引擎配置完成")
@@ -146,7 +146,7 @@ class ExampleCallServiceManager {
             uid: UInt(userId) ?? 0,
             name: userName
         )
-        let channelName = "\(ExampleUserService().currentUserId)-\(userId)"
+        let channelName = "\(ExampleUserService().currentUserId ?? "")-\(userId)"
         
         CallManager.shared.startCall(to: remoteUser, channelName: channelName, callType: .video) { result in
             switch result {
@@ -168,7 +168,7 @@ class ExampleCallServiceManager {
             uid: UInt(userId) ?? 0,
             name: userName
         )
-        let channelName = "\(ExampleUserService().currentUserId)-\(userId)"
+        let channelName = "\(ExampleUserService().currentUserId ?? "")-\(userId)"
         
         CallManager.shared.startCall(to: remoteUser, channelName: channelName, callType: .voice) { result in
             switch result {

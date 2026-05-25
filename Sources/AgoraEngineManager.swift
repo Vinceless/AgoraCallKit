@@ -31,10 +31,20 @@ public protocol AgoraEngineDelegate: AnyObject {
     func engine(_ engine: AgoraEngineManager, remoteAudioMuted muted: Bool, ofUid uid: UInt)
     /// 连接状态变化
     func engine(_ engine: AgoraEngineManager, connectionStateChanged state: AgoraConnectionState)
+    /// Token 即将过期（提前 30 秒通知），实现方应请求新 Token 并调用 engine.renewToken
+    func engine(_ engine: AgoraEngineManager, tokenPrivilegeWillExpire token: String)
+    /// 服务端要求刷新 Token，实现方应请求新 Token 并调用 callback
+    func engine(_ engine: AgoraEngineManager, requestTokenWithCallback callback: @escaping (String) -> Void)
+}
+
+// 提供默认空实现，保持向后兼容
+public extension AgoraEngineDelegate {
+    func engine(_ engine: AgoraEngineManager, tokenPrivilegeWillExpire token: String) {}
+    func engine(_ engine: AgoraEngineManager, requestTokenWithCallback callback: @escaping (String) -> Void) { callback("") }
 }
 
 /// 声网引擎管理器，封装 AgoraRtcEngineKit 的常用操作
-public class AgoraEngineManager: NSObject {
+public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
     public static let shared = AgoraEngineManager()
     public weak var delegate: AgoraEngineDelegate?
     
@@ -270,5 +280,25 @@ extension AgoraEngineManager: AgoraRtcEngineDelegate {
     
     public func rtcEngine(_ engine: AgoraRtcEngineKit, connectionChangedTo state: AgoraConnectionState, reason: AgoraConnectionChangedReason) {
         delegate?.engine(self, connectionStateChanged: state)
+    }
+    
+    // MARK: - Token 过期回调
+    
+    /// Token 即将过期（提前 30 秒通知）
+    public func rtcEngine(_ engine: AgoraRtcEngineKit, tokenPrivilegeWillExpire token: String) {
+        print("[AgoraEngineManager] Token 即将过期，需要刷新")
+        // 通知 delegate 刷新 Token
+        delegate?.engine(self, tokenPrivilegeWillExpire: token)
+    }
+    
+    /// Token 已过期，引擎请求新 Token
+    public func rtcEngine(_ engine: AgoraRtcEngineKit, requestTokenWithCallback callback: @escaping (String) -> Void) {
+        print("[AgoraEngineManager] 服务端要求刷新 Token")
+        delegate?.engine(self, requestTokenWithCallback: callback)
+    }
+    
+    /// 更新 Token
+    public func renewToken(_ token: String) {
+        engine?.renewToken(token)
     }
 }

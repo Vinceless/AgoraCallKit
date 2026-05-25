@@ -53,9 +53,9 @@ public class PictureInPictureManager: NSObject {
         renderView.contentMode = .scaleAspectFill
         renderView.alpha = 0.01  // 几乎不可见但系统认为可见，PiP 需要
 
-        if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+        if let window = UIWindowScene.safeKeyWindow {
             window.addSubview(renderView)
-        } else if let window = UIApplication.shared.windows.first {
+        } else if let window = UIWindowScene.focused?.windows.first {
             window.addSubview(renderView)
         }
 
@@ -68,11 +68,11 @@ public class PictureInPictureManager: NSObject {
                     playbackDelegate: self
                 )
                 let controller = AVPictureInPictureController(contentSource: contentSource)
-                controller?.delegate = self
-                controller?.canStartPictureInPictureAutomaticallyFromInline = true
+                controller.delegate = self
+                controller.canStartPictureInPictureAutomaticallyFromInline = true
                 newController = controller
                 didSetup = true
-                print("[PiP] Controller created, isPictureInPicturePossible: \(controller?.isPictureInPicturePossible ?? false)")
+                print("[PiP] Controller created, isPictureInPicturePossible: \(controller.isPictureInPicturePossible ?? false)")
             } else {
                 // iOS 15 以下不支持 SampleBuffer 模式，移除已添加的视图
                 renderView.removeFromSuperview()

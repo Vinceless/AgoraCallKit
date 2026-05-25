@@ -83,7 +83,7 @@ public class FloatingWindowManager {
         hideFloatingWindow()
         // 重新 present VC
         DispatchQueue.main.async {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+            if let windowScene = UIWindowScene.focused,
                let rootVC = windowScene.windows.first?.rootViewController {
                 var topVC = rootVC
                 while let presented = topVC.presentedViewController {
@@ -333,7 +333,7 @@ class FloatingCallWindow: UIViewController {
     }
     
     func show() {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+        guard let windowScene = UIWindowScene.focused,
               let keyWindow = windowScene.windows.first(where: { $0.isKeyWindow }) else { return }
         
         let size = isVideoMode ? CGSize(width: 110, height: 200) : CGSize(width: 80, height: 80)
@@ -393,7 +393,7 @@ class FloatingCallWindow: UIViewController {
         vc.restoreFromFloatingWindow(videoView)
         // 重新 present VC
         DispatchQueue.main.async {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+            if let windowScene = UIWindowScene.focused,
                let rootVC = windowScene.windows.first?.rootViewController {
                 var topVC = rootVC
                 while let presented = topVC.presentedViewController {

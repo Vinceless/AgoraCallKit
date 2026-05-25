@@ -556,17 +556,25 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
     }
     
     @objc open func endCall() {
+        guard endCallButton.isEnabled else { return }
+        endCallButton.isEnabled = false
         CallSoundService.shared.playButtonClickSound()
         callManager.hangUp()
         dismiss(animated: true)
     }
     
     @objc open func acceptCall() {
+        guard acceptCallButton.isEnabled else { return }
+        acceptCallButton.isEnabled = false
+        rejectCallButton.isEnabled = false
         CallSoundService.shared.playButtonClickSound()
         callManager.acceptCall()
     }
     
     @objc open func rejectCall() {
+        guard rejectCallButton.isEnabled else { return }
+        acceptCallButton.isEnabled = false
+        rejectCallButton.isEnabled = false
         CallSoundService.shared.playButtonClickSound()
         if callManager.currentState == .incoming {
             callManager.rejectCall()

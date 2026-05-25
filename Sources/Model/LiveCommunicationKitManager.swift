@@ -58,6 +58,11 @@ public class LiveCommunicationKitManager: NSObject {
     
     private var pendingAction: ConversationAction?  // 存储待处理的 Action，用于延迟 fulfill
     
+    /// 是否正在执行 reportIncomingCall（用于区分 reset 原因是"展现失败"还是"通话结束"）
+    private var isReportingIncomingCall = false
+    /// 当前 reportIncomingCall 的 completion 回调（用于在展现失败时通知 CallManager 降级）
+    private var reportCompletion: ((Bool) -> Void)?
+    
     private override init() {
         super.init()
     }
@@ -139,6 +144,8 @@ public class LiveCommunicationKitManager: NSObject {
         }
         
         currentCallUUID = uuid
+        isReportingIncomingCall = true
+        reportCompletion = completion
         
         // 创建 Handle 表示来电者
         let handle = Handle(type: .generic, value: callerName, displayName: callerName)
@@ -149,26 +156,29 @@ public class LiveCommunicationKitManager: NSObject {
         
         print("[LiveCommunicationKitManager] 开始报告新来电 (Live Activity)...")
         
-        // 关键：不使用 Task 包装，直接在当前线程执行
-        // 这样可以确保在 PKPushRegistry delegate 返回前完成执行
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
                 try await conversationManager.reportNewIncomingConversation(uuid: uuid, update: update)
                 print("[LiveCommunicationKitManager] ✅ Live Activity 来电界面已显示")
                 await MainActor.run {
                     self.isShowingIncomingCall = true
-                    completion(true)
+                    self.isReportingIncomingCall = false
+                    self.reportCompletion?(true)
+                    self.reportCompletion = nil
                 }
             } catch {
                 print("[LiveCommunicationKitManager] ❌ 报告来电失败: \(error.localizedDescription)")
                 await MainActor.run {
                     self.isShowingIncomingCall = false
-                    completion(false)
+                    self.isReportingIncomingCall = false
+                    self.currentCallUUID = nil
+                    self.currentConversation = nil
+                    self.reportCompletion?(false)
+                    self.reportCompletion = nil
                 }
             }
         }
-        
-        Thread.sleep(forTimeInterval: 0.05)
     }
     
     // MARK: - 通话状态报告
@@ -295,7 +305,24 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
     
     /// ConversationManager 重置
     public func conversationManagerDidReset(_ manager: ConversationManager) {
-        print("[LiveCommunicationKitManager] ConversationManager 重置")
+        print("[LiveCommunicationKitManager] ConversationManager 重置, isReportingIncomingCall=\(isReportingIncomingCall), isShowingIncomingCall=\(isShowingIncomingCall)")
+        
+        // 场景1：正在 reportIncomingCall 过程中被重置 → 说明 Live Activity 展现失败
+        // 仅通知 completion(false)，让 CallManager 回退到 in-app UI，不结束通话
+        if isReportingIncomingCall {
+            print("[LiveCommunicationKitManager] 重置发生在报告来电过程中，通知 CallManager 降级到 in-app UI")
+            isReportingIncomingCall = false
+            currentConversation = nil
+            isShowingIncomingCall = false
+            let completion = reportCompletion
+            reportCompletion = nil
+            currentCallUUID = nil
+            completion?(false)
+            return
+        }
+        
+        // 场景2：已显示来电界面后被重置（如用户在其他地方结束通话、系统回收资源等）
+        // 通知 CallManager 处理
         currentConversation = nil
         isShowingIncomingCall = false
         delegate?.liveCommunicationKitDidReset()

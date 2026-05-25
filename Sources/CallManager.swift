@@ -11,7 +11,7 @@ import AgoraRtcKit
 /// 通话核心管理器，负责信令交互、状态管理、音视频控制
 public class CallManager {
     
-    public static let shared = CallManager()
+    public static let shared = CallManager(engine: AgoraEngineManager.shared, soundService: CallSoundService.shared)
     
     // MARK: - 日志
     
@@ -82,7 +82,11 @@ public class CallManager {
     /// App 层的全局 delegate（如 AppCallUIDelegate）和当前通话 VC 各自独立注册
     public let uiDelegate = CallUIDelegateMulticast()
     
-    public let engine = AgoraEngineManager.shared
+    /// 引擎管理器（可注入，支持 Mock 测试，默认使用 shared）
+    public let engine: AgoraEngineProtocol
+    
+    /// 声音服务（可注入，支持 Mock 测试，默认使用 shared）
+    private let soundService: CallSoundServiceProtocol
     
     // MARK: - 线程安全
     /// 保护所有状态属性读写的锁，RTC 引擎回调（非主线程）和主线程用户操作
@@ -167,54 +171,90 @@ public class CallManager {
         return oldValue
     }
     
-    private var currentCallType: CallType?
-    private var currentChannel: String?
-    private var currentToken: String?
-    
-    /// CallKit/LiveCommunicationKit 使用的 UUID（用于系统来电界面）
-    private var currentCallUUID: UUID?
+    /// 当前活跃通话会话（封装通话上下文），nil 表示无活跃通话
+    public private(set) var activeSession: CallSession?
     
     /// 服务端返回的通话标识符（用于信令关联）
-    public private(set) var currentCallID: String?
+    public var currentCallID: String? { activeSession?.callID }
+    /// 当前通话类型
+    private var currentCallType: CallType? { activeSession?.callType }
+    /// 当前频道名
+    private var currentChannel: String? { activeSession?.channelName }
+    /// 当前 Token
+    private var currentToken: String? {
+        get { activeSession?.token }
+        set { activeSession?.updateToken(newValue ?? "") }
+    }
+    /// 系统来电 UUID
+    private var currentCallUUID: UUID? {
+        get { activeSession?.callUUID }
+        set { activeSession?.callUUID = newValue }
+    }
     
     public var localUser: CallUser?
-    public var currentRemoteUser: CallUser?
+    public var currentRemoteUser: CallUser? {
+        get { activeSession?.remoteUser }
+        set { activeSession?.remoteUser = newValue }
+    }
     
-    private var callStartTime: Date?
+    private var callStartTime: Date? {
+        get { activeSession?.startTime }
+        set { activeSession?.startTime = newValue }
+    }
+    
     private var durationTimer: Timer?
     
     /// 呼叫超时定时器（默认 90 秒）
     private var callingTimeoutTimer: Timer?
     public var callingTimeoutInterval: TimeInterval = 30
     
-    // 群组通话用户列表
-    private var remoteUsers: [UInt: CallUser] = [:]
-    
-    private var hasReportedConnected = false
-    
     /// 用户是否通过系统来电界面（CallKit/LiveCommunicationKit）点击了接听
-    private var hasAcceptedViaSystemUI = false
+    private var hasAcceptedViaSystemUI: Bool {
+        get { activeSession?.hasAcceptedViaSystemUI ?? false }
+        set { activeSession?.hasAcceptedViaSystemUI = newValue }
+    }
+    
+    private var hasReportedConnected: Bool {
+        get { activeSession?.hasReportedConnected ?? false }
+        set { activeSession?.hasReportedConnected = newValue }
+    }
     
     // 信令监听器（由 CallManager 实现，并注册到 signalDelegate）
     private let signalListener = CallManagerSignalListener()
     
-    private init() {
-        engine.delegate = self
+    /// DI-friendly 初始化（同时暴露 shared 给 single-call 模式）
+    public init(engine: AgoraEngineProtocol = AgoraEngineManager.shared,
+                soundService: CallSoundServiceProtocol = CallSoundService.shared) {
+        self.engine = engine
+        self.soundService = soundService
+        (engine as? AgoraEngineManager)?.delegate = self
         signalListener.manager = self
+        
+        // 注册 App 进入前台通知，关闭系统来电界面并显示自定义来电界面
+        registerAppLifecycleObserver()
+    }
+    
+    /// 懒加载 CallKit/LiveCommunicationKit（首次来电时触发）
+    private var hasConfiguredSystemUI = false
+    private func ensureSystemUIConfigured() {
+        guard !hasConfiguredSystemUI else { return }
+        hasConfiguredSystemUI = true
         
         // 配置 LiveCommunicationKit（iOS 17.4+ 且已启用）
         if #available(iOS 17.4, *) {
-            LiveCommunicationKitManager.shared.delegate = self
-            LiveCommunicationKitManager.shared.configure()
-            print("[CallManager] LiveCommunicationKit 已启用（iOS 17.4+）")
+            if CallConfiguration.shared.isLiveCommunicationKitEnabled {
+                LiveCommunicationKitManager.shared.delegate = self
+                LiveCommunicationKitManager.shared.configure()
+                print("[CallManager] LiveCommunicationKit 已启用（iOS 17.4+）")
+            }
         }
-        #if DEBUG
-        CallKitManager.shared.delegate = self
-        // 根据 CallConfiguration 自动配置 CallKit
-        CallKitManager.shared.configure()
+        #if !CHINA_APP_STORE
+        if CallConfiguration.shared.isCallKitEnabled {
+            CallKitManager.shared.delegate = self
+            // 根据 CallConfiguration 自动配置 CallKit
+            CallKitManager.shared.configure()
+        }
         #endif
-        // 注册 App 进入前台通知，关闭系统来电界面并显示自定义来电界面
-        registerAppLifecycleObserver()
     }
     
     // MARK: - App 生命周期监听
@@ -255,7 +295,7 @@ public class CallManager {
                 LiveCommunicationKitManager.shared.dismissIncomingCallUI()
             }
         }
-#if DEBUG
+#if !CHINA_APP_STORE
         if useSystemCallUI {
             log("App 进入前台: 关闭 CallKit 来电界面, hasAcceptedViaSystemUI=\(hasAcceptedViaSystemUI)")
             CallKitManager.shared.dismissIncomingCallUI(hasUserAccepted: hasAcceptedViaSystemUI)
@@ -287,16 +327,10 @@ public class CallManager {
     }
     
     // MARK: - 通话框架选择
-    #if DEBUG
-    /// 是否使用系统来电界面（CallKit 或 LiveCommunicationKit）
-    /// - 注意：isCallKitEnabled = false 时完全不使用系统来电界面
-    /// - isCallKitEnabled = true 时：
-    ///   - iOS 17.4+ && isLiveCommunicationKitEnabled = true → LiveCommunicationKit
-    ///   - 其他情况 → CallKit
+    /// 是否使用 CallKit 系统来电界面
     private var useSystemCallUI: Bool {
         return CallConfiguration.shared.isCallKitEnabled
     }
-    #endif
     /// 是否使用 LiveCommunicationKit（iOS 17.4+ 且已启用）
     /// - 注意：只要 isLiveCommunicationKitEnabled = true，iOS 17.4+ 就使用 LiveCommunicationKit
     /// - isCallKitEnabled 仅在 LiveCommunicationKit 不可用时作为 CallKit 的开关
@@ -373,11 +407,12 @@ public class CallManager {
             return
         }
         
+        // 创建会话并确保系统 UI 已配置（懒加载）
+        activeSession = CallSession(callID: callID ?? "", channelName: channelName, token: token, callType: callType, isCaller: true)
+        activeSession?.remoteUser = user
+        ensureSystemUIConfigured()
+        
         isCaller = true
-        currentCallType = callType
-        currentRemoteUser = user
-        currentChannel = channelName
-        currentCallID = callID
         startCallingTimeout()
         
         // 立即回调 success，让 App 先弹出通话界面
@@ -390,14 +425,20 @@ public class CallManager {
             case .success(let token):
                 self.currentToken = token
                 let effectiveCallID = self.currentCallID ?? ""
-                self.signalDelegate?.sendCallRequest(callID: effectiveCallID, toUserId: user.userId, channelName: channelName, token: token, callType: callType) { result in
-                    if case .failure(let error) = result {
-                        self.log("发送信令失败: \(error.localizedDescription)", level: .error)
-                        self.failWithError(.signalFailed(underlying: error))
-                    } else {
-                        self.log("发送信令成功")
+                // 使用指数退避重试机制发送信令
+                SignalRetryManager.shared.sendWithRetry(
+                    operation: { completion in
+                        self.signalDelegate?.sendCallRequest(callID: effectiveCallID, toUserId: user.userId, channelName: channelName, token: token, callType: callType, completion: completion)
+                    },
+                    completion: { result in
+                        if case .failure(let error) = result {
+                            self.log("发送信令失败（重试已用完）: \(error.localizedDescription)", level: .error)
+                            self.failWithError(.signalFailed(underlying: error))
+                        } else {
+                            self.log("发送信令成功")
+                        }
                     }
-                }
+                )
             case .failure(let error):
                 self.log("获取 Token 失败: \(error.localizedDescription)", level: .error)
                 self.failWithError(.tokenFetchFailed(underlying: error))
@@ -409,11 +450,12 @@ public class CallManager {
     /// - Parameters:
     ///   - channelName: 频道名
     ///   - callType: 通话类型
+    ///   - toUserIds: 群组成员用户 ID 列表，加入频道后会向这些用户发送通话邀请信令；为空时不发送信令（保持向后兼容）
     ///   - token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     ///   - completion: 完成回调
-    public func startGroupCall(channelName: String, callType: CallType, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+    public func startGroupCall(channelName: String, callType: CallType, toUserIds: [String] = [], token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
         validateDependencies()
-        log("发起群聊通话: channel=\(channelName), type=\(callType), hasDirectToken=\(token != nil && !token!.isEmpty)")
+        log("发起群聊通话: channel=\(channelName), type=\(callType), toUserIds=\(toUserIds), hasDirectToken=\(token != nil && !token!.isEmpty)")
         
         guard let userId = userProvider?.currentUserId else {
             log("发起失败: 无法获取当前用户ID", level: .error)
@@ -428,9 +470,11 @@ public class CallManager {
             return
         }
         
+        // 创建会话并确保系统 UI 已配置（懒加载）
+        activeSession = CallSession(callID: "", channelName: channelName, token: token, callType: callType, isCaller: true)
+        ensureSystemUIConfigured()
+        
         isCaller = true
-        currentCallType = callType
-        currentChannel = channelName
         startCallingTimeout()
         
         // 立即回调 success，让 App 先弹出通话界面
@@ -442,6 +486,23 @@ public class CallManager {
             switch result {
             case .success(let token):
                 self.currentToken = token
+                // 向群组成员发送通话邀请信令（toUserIds 为空时跳过，保持向后兼容）
+                let callID = self.currentCallID ?? UUID().uuidString
+                for userId in toUserIds {
+                    SignalRetryManager.shared.sendWithRetry(
+                        operation: { completion in
+                            self.signalDelegate?.sendCallRequest(
+                                callID: callID,
+                                toUserId: userId,
+                                channelName: channelName,
+                                token: token,
+                                callType: callType,
+                                completion: completion
+                            )
+                        },
+                        completion: { _ in }
+                    )
+                }
             case .failure(let error):
                 self.log("获取 Token 失败: \(error.localizedDescription)", level: .error)
                 self.failWithError(.tokenFetchFailed(underlying: error))
@@ -483,7 +544,13 @@ public class CallManager {
                     return
                 }
                 let effectiveCallID = self.currentCallID ?? ""
-                self.signalDelegate?.sendAcceptResponse(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
+                // 使用指数退避重试机制发送接听信令
+                SignalRetryManager.shared.sendWithRetry(
+                    operation: { completion in
+                        self.signalDelegate?.sendAcceptResponse(callID: effectiveCallID, toUserId: remoteUser.userId, completion: completion)
+                    },
+                    completion: { _ in }
+                )
 
                 // ========== 通知 CallKit/LiveCommunicationKit 停止来电界面 ==========
                 // 当用户在 App 内点击"接受"时，需要通知系统来电界面通话已接听
@@ -492,9 +559,11 @@ public class CallManager {
                         LiveCommunicationKitManager.shared.markCallAccepted()
                     }
                 }
-#if DEBUG
+#if !CHINA_APP_STORE
                 if self.useSystemCallUI {
                     CallKitManager.shared.markCallAccepted()
+                }
+                #endif
                 }
                 #endif
                 // ========== 通知 App 层 present 通话控制器（除非已跳过） ==========
@@ -532,7 +601,7 @@ public class CallManager {
     /// 挂断当前通话
     public func hangUp() {
         log("挂断通话, callID=\(currentCallID ?? "nil")")
-        guard currentState != .idle, currentState != .disconnected else {
+        guard isInActiveCall else {
             log("挂断忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
@@ -543,12 +612,12 @@ public class CallManager {
         if let remoteUser = currentRemoteUser, currentState == .connected || currentState == .reconnecting {
             log("发送挂断信令给 userId=\(remoteUser.userId), callID=\(effectiveCallID)")
             signalDelegate?.sendHangupSignal(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
-        } else if let remoteUser = currentRemoteUser, currentState == .calling || currentState == .connecting || currentState == .incoming {
+        } else if let remoteUser = currentRemoteUser, isInCallSetup {
             log("发送取消信令给 userId=\(remoteUser.userId), callID=\(effectiveCallID)")
             signalDelegate?.sendCancelSignal(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
         }
         
-        disconnectCall(error: nil, endedReason: .remoteEnded)
+        disconnectCall(error: nil, endedReason: .localEnded)
     }
     
     // MARK: - 公共方法 - 内部辅助
@@ -611,6 +680,26 @@ public class CallManager {
         }
     }
     
+    /// 是否处于活跃通话中（非 idle/disconnected/failed）
+    private var isInActiveCall: Bool {
+        switch currentState {
+        case .idle, .disconnected, .failed:
+            return false
+        default:
+            return true
+        }
+    }
+    
+    /// 是否处于呼叫建立阶段
+    private var isInCallSetup: Bool {
+        switch currentState {
+        case .calling, .connecting, .incoming:
+            return true
+        default:
+            return false
+        }
+    }
+    
     /// 获取当前通话类型
     public var getCurrentCallType: CallType? { currentCallType }
     
@@ -619,9 +708,7 @@ public class CallManager {
     
     /// 获取群组所有远端用户（线程安全快照）
     public func getAllRemoteUsers() -> [CallUser] {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return Array(remoteUsers.values)
+        return activeSession?.remoteUsersSnapshot() ?? []
     }
     
     // MARK: - 公共方法 - 音视频控制（转发给引擎）
@@ -696,13 +783,14 @@ public class CallManager {
             return
         }
         
+        // 创建通话会话并确保系统 UI 已配置（懒加载）
+        let session = CallSession(callID: callID ?? "", channelName: channelName, token: token, callType: callType, isCaller: false)
+        session.remoteUser = user
+        activeSession = session
+        ensureSystemUIConfigured()
+        
         isCaller = false
-        currentCallID = callID  // 缓存服务端 callID
         currentState = .incoming
-        currentCallType = callType
-        currentChannel = channelName
-        currentRemoteUser = user
-        currentToken = token
         startCallingTimeout()
         
         let callUUID = UUID()
@@ -717,12 +805,22 @@ public class CallManager {
                     uuid: callUUID,
                     callerName: user.name,
                     isVideo: callType == .video,
-                    completion: systemUICompletion
+                    completion: { [weak self] success in
+                        if !success {
+                            // LiveCommunicationKit 展现失败（如缺少 entitlement、配置错误等），回退到 App 内来电弹窗
+                            self?.log("LiveCommunicationKit 展现失败，回退到 App 内来电弹窗", level: .warning)
+                            DispatchQueue.main.async { [weak self] in
+                                guard let self = self else { return }
+                                self.uiDelegate.didReceiveIncomingCall(from: user, callType: callType, channelName: channelName, token: token)
+                            }
+                        }
+                        systemUICompletion(success)
+                    }
                 )
                 return
             }
         case .callKit:
-#if DEBUG
+#if !CHINA_APP_STORE
             CallKitManager.shared.reportIncomingCall(
                 uuid: callUUID,
                 handle: user.userId,
@@ -761,8 +859,8 @@ public class CallManager {
             log("userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理", level: .warning)
         }
         // 更新 callID（如果之前为空）
-        if currentCallID == nil {
-            currentCallID = callID
+        if currentCallID?.isEmpty ?? true {
+            activeSession?.updateCallID(callID)
         }
         stopCallingTimeout()
         currentState = .connecting
@@ -793,9 +891,9 @@ public class CallManager {
     ///   - callID: 服务端返回的通话标识符
     ///   - fromUserId: 挂断方用户ID
     public func onCallHangup(callID: String, fromUserId: String) {
-        log("对方挂断: callID=\(callID), fromUserId=\(fromUserId)")
-        guard currentState != .idle && currentState != .disconnected else {
-            log("挂断忽略: 当前状态=\(currentState)", level: .warning)
+        log("对方挨断: callID=\(callID), fromUserId=\(fromUserId)")
+        guard isInActiveCall else {
+            log("挨断忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理
@@ -830,7 +928,7 @@ public class CallManager {
     ///   - fromUserId: 呼叫失败用户ID
     public func onCallFailed(callID: String, fromUserId: String, reason: String?) {
         log("对方呼叫失败: fromUserId=\(fromUserId), reason=\(reason ?? "未知原因")", level: .warning)
-        guard currentState != .idle && currentState != .disconnected && currentState != .failed else {
+        guard isInActiveCall else {
             log("呼叫失败忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
@@ -881,10 +979,11 @@ public class CallManager {
                 LiveCommunicationKitManager.shared.reportCallEnded(reason: error != nil ? "failed" : "ended")
             }
         }
-        #if DEBUG
-        /// 没有启用LiveCommunicationKit，但启用了CallUI
-        CallKitManager.shared.reportCallEnded(reason: endedReason)
-        #endif
+#if !CHINA_APP_STORE
+        else if useSystemCallUI {
+            CallKitManager.shared.reportCallEnded(reason: endedReason)
+        }
+#endif
         
         let notify = {
             self.log("通知 uiDelegate.didDisconnect")
@@ -921,23 +1020,15 @@ public class CallManager {
         soundService.stopAllSounds()
         // 隐藏来电弹窗（可能在超时等场景下还没关闭）
         IncomingCallManager.shared.hide()
-        // 统一清理：离开频道、悬浮窗、画中画（必须在重置 currentCallType 之前）
+        // 统一清理：离开频道、悬浮窗、画中画（必须在重置会话之前）
         cleanupAllResources()
         isCaller = false
-        hasAcceptedViaSystemUI = false
-        hasReportedConnected = false
         currentState = .idle
-        currentCallType = nil
-        currentChannel = nil
-        currentRemoteUser = nil
-        currentToken = nil
-        currentCallUUID = nil
-        currentCallID = nil  // 清除服务端 callID
         localUser = nil
         callStartTime = nil
-        stateLock.lock()
-        remoteUsers.removeAll()
-        stateLock.unlock()
+        // 清除整个会话
+        activeSession?.removeAllRemoteUsers()
+        activeSession = nil
     }
     
     /// 统一清理所有通话资源（离开频道、悬浮窗、画中画）
@@ -983,7 +1074,7 @@ public class CallManager {
         log("启动呼叫超时定时器: \(callingTimeoutInterval)s")
         callingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: callingTimeoutInterval, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            if self.currentState == .calling || self.currentState == .incoming || self.currentState == .connecting {
+            if self.isInCallSetup {
                 self.log("呼叫超时! 通知 App 端处理", level: .warning)
                 self.stopCallingTimeout()
                 DispatchQueue.main.async {
@@ -1045,21 +1136,27 @@ extension CallManager: AgoraEngineDelegate {
         stopCallingTimeout()
         
         // 如果还没有进入 connected 状态，推进状态
-        if currentState == .connecting || currentState == .calling || currentState == .incoming {
+        if isInCallSetup {
             currentState = .connected
             if callStartTime == nil {
                 callStartTime = Date()
                 startDurationTimer()
             }
             
-            if useLiveCommunicationKit {
-                if #available(iOS 17.4, *) {
-                    LiveCommunicationKitManager.shared.reportCallConnected()
-                } 
+            // 防止多个远端用户加入时重复上报（群聊场景）
+            if !hasReportedConnected {
+                hasReportedConnected = true
+                if useLiveCommunicationKit {
+                    if #available(iOS 17.4, *) {
+                        LiveCommunicationKitManager.shared.reportCallConnected()
+                    } 
+                }
+#if !CHINA_APP_STORE
+                else if useSystemCallUI {
+                    CallKitManager.shared.reportCallConnected()
+                }
+#endif
             }
-            #if DEBUG
-            CallKitManager.shared.reportCallConnected()
-            #endif
         }
         
         if let remoteUser = currentRemoteUser, remoteUser.uid == 0 {
@@ -1076,9 +1173,7 @@ extension CallManager: AgoraEngineDelegate {
             }
         } else {
             let user = CallUser(userId: "\(uid)", uid: uid, name: "user_\(uid)")
-            stateLock.lock()
-            remoteUsers[uid] = user
-            stateLock.unlock()
+            activeSession?.setRemoteUser(user, forUid: uid)
             DispatchQueue.main.async { [weak self] in
                 self?.uiDelegate.remoteUserDidJoin(user)
             }
@@ -1087,13 +1182,8 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, didOfflineOfUid uid: UInt) {
         log("引擎回调: 远端用户离开 uid=\(uid)")
-        // 锁保护 remoteUsers 字典的读写
-        stateLock.lock()
-        let user = remoteUsers[uid]
-        if user != nil {
-            remoteUsers.removeValue(forKey: uid)
-        }
-        stateLock.unlock()
+        // 使用会话的线程安全 remoteUsers 管理
+        let user = activeSession?.removeRemoteUser(forUid: uid)
         
         if let user = user {
             DispatchQueue.main.async { [weak self] in
@@ -1104,7 +1194,7 @@ extension CallManager: AgoraEngineDelegate {
                 self?.uiDelegate.remoteUserDidLeave(remoteUser)
             }
             // 单聊：远端用户离开即结束通话（无论当前状态）
-            if currentState != .idle && currentState != .disconnected {
+            if isInActiveCall {
                 log("远端用户离开，触发 hangUp")
                 hangUp()
             }
@@ -1137,15 +1227,13 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, remoteVideoMuted muted: Bool, ofUid uid: UInt) {
         log("引擎回调: 远端视频静音 muted=\(muted), uid=\(uid)")
-        // 锁保护 remoteUsers 字典的 read-modify-write
-        stateLock.lock()
+        // 使用会话的线程安全 remoteUsers 管理
         var foundUser: CallUser?
-        if var user = remoteUsers[uid] {
+        if var user = activeSession?.remoteUser(forUid: uid) {
             user.isVideoMuted = muted
-            remoteUsers[uid] = user
+            activeSession?.setRemoteUser(user, forUid: uid)
             foundUser = user
         }
-        stateLock.unlock()
         
         if let user = foundUser {
             DispatchQueue.main.async { [weak self] in
@@ -1162,15 +1250,13 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, remoteAudioMuted muted: Bool, ofUid uid: UInt) {
         log("引擎回调: 远端音频静音 muted=\(muted), uid=\(uid)")
-        // 锁保护 remoteUsers 字典的 read-modify-write
-        stateLock.lock()
+        // 使用会话的线程安全 remoteUsers 管理
         var foundUser: CallUser?
-        if var user = remoteUsers[uid] {
+        if var user = activeSession?.remoteUser(forUid: uid) {
             user.isAudioMuted = muted
-            remoteUsers[uid] = user
+            activeSession?.setRemoteUser(user, forUid: uid)
             foundUser = user
         }
-        stateLock.unlock()
         
         if let user = foundUser {
             DispatchQueue.main.async { [weak self] in
@@ -1224,22 +1310,67 @@ extension CallManager: AgoraEngineDelegate {
                         LiveCommunicationKitManager.shared.reportCallConnected()
                     }
                 }
-                #if DEBUG
-                CallKitManager.shared.reportCallConnected()
-                #endif
+#if !CHINA_APP_STORE
+                else if useSystemCallUI {
+                    CallKitManager.shared.reportCallConnected()
+                }
+#endif
             }
         }
+    
+    // MARK: - Token 刷新回调
+    
+    /// Token 即将过期（提前 30 秒通知）
+    public func engine(_ engine: AgoraEngineManager, tokenPrivilegeWillExpire token: String) {
+        log("Token 即将过期，自动刷新", level: .warning)
+        guard let channel = currentChannel, let userId = userProvider?.currentUserId else { return }
+        tokenProvider?.fetchToken(channelName: channel, userId: userId) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let newToken):
+                (self.engine as? AgoraEngineManager)?.renewToken(newToken)
+                self.currentToken = newToken
+                self.log("Token 刷新成功")
+            case .failure(let error):
+                self.log("Token 刷新失败: \(error.localizedDescription)", level: .error)
+            }
+        }
+    }
+    
+    /// 服务端要求刷新 Token
+    public func engine(_ engine: AgoraEngineManager, requestTokenWithCallback callback: @escaping (String) -> Void) {
+        log("服务端要求刷新 Token", level: .warning)
+        guard let channel = currentChannel, let userId = userProvider?.currentUserId else {
+            callback("")
+            return
+        }
+        tokenProvider?.fetchToken(channelName: channel, userId: userId) { result in
+            switch result {
+            case .success(let newToken):
+                callback(newToken)
+            case .failure:
+                callback("")
+            }
+        }
+    }
 }
 
 // MARK: - CallKitManagerDelegate
 
-#if DEBUG
+#if !CHINA_APP_STORE
 extension CallManager: CallKitManagerDelegate {
     
     public func callKitManagerDidReset() {
-        log("CallKit 重置，强制结束通话")
-        if currentState != .idle {
+        log("CallKit 重置，currentState=\(currentState)")
+        // 仅在已接通的通话中才强制结束通话
+        switch currentState {
+        case .connected, .reconnecting:
+            log("CallKit 重置：通话活跃中，强制结束通话")
             disconnectCall(error: nil, endedReason: .remoteEnded)
+        case .incoming:
+            log("CallKit 重置：当前为来电状态，清理 CallKit 状态但不结束通话", level: .warning)
+        default:
+            log("CallKit 重置：当前状态 \(currentState)，忽略")
         }
     }
     
@@ -1319,9 +1450,20 @@ extension CallManager: LiveCommunicationKitManagerDelegate {
     
     /// LiveCommunicationKit 重置
     public func liveCommunicationKitDidReset() {
-        log("LiveCommunicationKit 重置，强制结束通话")
-        if currentState != .idle {
+        log("LiveCommunicationKit 重置，currentState=\(currentState)")
+        
+        // 场景1：仅在已接通的通话中才强制结束通话
+        // （用户通过系统 UI 结束了正在进行的通话）
+        switch currentState {
+        case .connected, .reconnecting:
+            log("LiveCommunicationKit 重置：通话活跃中，强制结束通话")
             disconnectCall(error: nil, endedReason: .remoteEnded)
+        case .incoming:
+            // 来电状态下的 reset 已在 LiveCommunicationKitManager 层处理（展现失败 → fallback）
+            // 如果走到这里，说明是异步的额外 reset，仅清理状态但不结束通话
+            log("LiveCommunicationKit 重置：当前为来电状态，清理 LiveCommunicationKit 状态但不结束通话", level: .warning)
+        default:
+            log("LiveCommunicationKit 重置：当前状态 \(currentState)，忽略")
         }
     }
 }
