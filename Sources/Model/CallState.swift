@@ -30,34 +30,3 @@ public enum CallEndedReason: Equatable {
     case answeredElsewhere // 已在其他设备接听
     case declinedElsewhere // 已在其他设备拒绝
 }
-
-#if DEBUG
-
-import CallKit
-
-extension CallEndedReason {
-    
-    /// 转换为 CXCallEndedReason（用于 CallKit 场景）
-    public var cxCallEndedReason: CXCallEndedReason {
-        switch self {
-        case .failed:            return .failed
-        case .remoteEnded:       return .remoteEnded
-        case .unanswered:         return .unanswered
-        case .answeredElsewhere: return .answeredElsewhere
-        case .declinedElsewhere: return .declinedElsewhere
-        }
-    }
-    
-    /// 从 CXCallEndedReason 转换
-    public init(cxCallEndedReason: CXCallEndedReason) {
-        switch cxCallEndedReason {
-        case .failed:            self = .failed
-        case .remoteEnded:       self = .remoteEnded
-        case .unanswered:         self = .unanswered
-        case .answeredElsewhere:  self = .answeredElsewhere
-        case .declinedElsewhere: self = .declinedElsewhere
-        @unknown default:        self = .failed
-        }
-    }
-}
-#endif

@@ -64,11 +64,11 @@ public class AgoraEngineManager: NSObject {
         engine?.enableVideo()
         engine?.disableVideo() // 初始关闭视频，需要时再开启
         
-        // 只有在不使用系统通话框架时才手动管理音频会话
-        if !CallConfiguration.shared.isCallKitEnabled {
+        // 只有在不使用 LiveCommunicationKit 时才手动管理音频会话
+        if !CallConfiguration.shared.isLiveCommunicationKitEnabled {
             setupAudioSession()
         } else {
-            print("[AgoraEngineManager] 使用 CallKit/LiveCommunicationKit，跳过手动激活 AVAudioSession")
+            print("[AgoraEngineManager] 使用 LiveCommunicationKit，跳过手动激活 AVAudioSession")
         }
         
         // 设置视频编码配置

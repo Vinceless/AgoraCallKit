@@ -25,30 +25,24 @@ public enum SystemCallDisplayType {
     /// 不显示系统来电界面（仅 App 内弹窗）
     case none
     
-    /// 使用 CallKit 展示来电界面
-    case callKit
-    
     /// 使用 LiveCommunicationKit 展示来电界面（iOS 17.4+）
     case liveCommunicationKit
 }
 
 // MARK: - 系统来电界面模式
 
-/// 系统来电界面模式（高级 API，推荐使用）
+/// 系统来电界面模式（高级 API，国内版不支持 CallKit）
 public enum SystemCallUI {
     /// 不使用系统来电界面（仅 App 内弹窗）
     case none
-    
-    /// 仅使用 CallKit（所有 iOS 版本）
-    case callKitOnly
     
     /// 仅使用 LiveCommunicationKit（iOS 17.4+，规避审核风险）
     /// - iOS < 17.4 时自动降级为 App 内弹窗
     case liveCommunicationKitOnly
     
-    /// 优先使用 LiveCommunicationKit，iOS < 17.4 回退到 CallKit（推荐）
+    /// 优先使用 LiveCommunicationKit，iOS < 17.4 回退到 App 内弹窗
     /// - iOS 17.4+: 使用 LiveCommunicationKit（支持 VoIP 后台唤醒）
-    /// - iOS < 17.4: 使用 CallKit（支持 VoIP 后台唤醒）
+    /// - iOS < 17.4: 使用 App 内弹窗
     case auto
     
     /// 仅在 VoIP 推送时启用系统来电界面（动态控制）
@@ -101,7 +95,7 @@ public class CallConfiguration {
     
     /// 根据来电类型和当前 SystemCallUI 配置，返回系统来电界面展示类型
     /// - Parameter type: 来电类型（.voIPPush 或 .normal）
-    /// - Returns: 系统来电界面展示类型（LiveCommunicationKit、CallKit 或 none）
+    /// - Returns: 系统来电界面展示类型（LiveCommunicationKit 或 none）
     public func displayType(for type: IncomingCallType) -> SystemCallDisplayType {
         switch type {
         case .normal:
@@ -109,8 +103,6 @@ public class CallConfiguration {
             switch systemCallUI {
             case .none, .voipPushOnly:
                 return .none
-            case .callKitOnly:
-                return .callKit
             case .liveCommunicationKitOnly:
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
@@ -120,7 +112,7 @@ public class CallConfiguration {
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
                 }
-                return .callKit
+                return .none
             }
             
         case .voIPPush:
@@ -128,8 +120,6 @@ public class CallConfiguration {
             switch systemCallUI {
             case .none:
                 return .none
-            case .callKitOnly:
-                return .callKit
             case .liveCommunicationKitOnly:
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
@@ -139,7 +129,7 @@ public class CallConfiguration {
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
                 }
-                return .callKit
+                return .none
             }
         }
     }
@@ -147,10 +137,9 @@ public class CallConfiguration {
     // MARK: - 只读属性（根据 systemCallUI 计算）
     
     /// 是否启用 LiveCommunicationKit（iOS 17.4+ VoIP 来电框架）
-    /// - 注意：LiveCommunicationKit 和 CallKit 都支持 VoIP 后台唤醒
     public var isLiveCommunicationKitEnabled: Bool {
         switch systemCallUI {
-        case .none, .callKitOnly:
+        case .none:
             return false
         case .liveCommunicationKitOnly, .auto, .voipPushOnly:
             if #available(iOS 17.4, *) {
@@ -160,32 +149,12 @@ public class CallConfiguration {
         }
     }
     
-    /// 是否启用系统来电界面（CallKit 或 LiveCommunicationKit）
-    /// - true: 收到来电时显示系统来电 UI，支持锁屏/后台接听
-    /// - false: 不使用任何系统来电界面，来电仅通过 App 内 uiDelegate 处理
-    public var isCallKitEnabled: Bool {
-        switch systemCallUI {
-        case .none, .liveCommunicationKitOnly:
-            return false
-        case .callKitOnly:
-            return true
-        case .auto, .voipPushOnly:
-            if #available(iOS 17.4, *) {
-                return false
-            }
-            return true
-        }
-    }
-    
     /// 当前实际使用的系统来电框架
     public var currentFramework: String {
         if #available(iOS 17.4, *) {
             if isLiveCommunicationKitEnabled {
                 return "LiveCommunicationKit"
             }
-        }
-        if isCallKitEnabled {
-            return "CallKit"
         }
         return "App 内弹窗"
     }
