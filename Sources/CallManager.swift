@@ -272,7 +272,7 @@ public class CallManager {
     
     /// App 进入前台时调用：关闭系统来电界面，根据接听状态显示对应界面
     @objc private func handleAppDidBecomeActive() {
-        log("App 进入前台, currentState=\(currentState), hasAcceptedViaSystemUI=\(hasAcceptedViaSystemUI)")
+        log("App 进入前台, currentState=\(currentState), hasAcceptedViaSystemUI=\(hasAcceptedViaSystemUI), floatingWindow=\(FloatingWindowManager.shared.isShowing())")
         
         // 如果用户已在系统界面接听（hasAcceptedViaSystemUI=true），需要：
         // 1. 关闭系统来电界面
@@ -307,8 +307,16 @@ public class CallManager {
             guard let self = self else { return }
             
             if self.hasAcceptedViaSystemUI {
+                // 如果浮动窗口已经在显示（PiP 恢复场景），不需要重新创建 VC
+                // FloatingWindow 会通过 pipDidStop 自行恢复视频渲染
+                guard !FloatingWindowManager.shared.isShowing() else {
+                    self.log("App 进入前台：浮动窗口已在显示，跳过重复创建通话控制器")
+                    return
+                }
                 // 用户已在系统来电界面点击了接听 → 显示聊天控制器
                 log("App 进入前台：用户已在系统界面接听，显示聊天控制器")
+                // 清除标志位，避免后续前台切换重复触发
+                self.hasAcceptedViaSystemUI = false
                 self.uiDelegate.didAcceptIncomingCall(from: remoteUser, callType: callType)
             } else {
                 // 用户还未接听 → 显示来电弹窗
@@ -569,6 +577,8 @@ public class CallManager {
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
                         self.uiDelegate.didAcceptIncomingCall(from: remoteUser, callType: callType)
+                        // 清除系统 UI 接听标记，避免后续前台切换（如 PiP 恢复）重复创建 VC
+                        self.hasAcceptedViaSystemUI = false
                     }
                 } else {
                     self.log("接听: skipPresentUI=true，跳过 present 控制器")
