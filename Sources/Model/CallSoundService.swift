@@ -73,8 +73,17 @@ public class CallSoundService {
     
     // MARK: - 音频会话管理
     
+    /// 是否跳过音频会话配置（通话已接通，Agora 正在使用 .playAndRecord，不应被铃声/效果音覆盖）
+    /// 由 CallManager 在进入 .connected 时设为 true，resetCall 时设为 false
+    public var bypassAudioSession: Bool = false
+    
     /// 配置音频会话（播放铃声前调用）
+    /// 若 bypassAudioSession = true（通话中），则跳过配置，避免覆盖 Agora 的音频会话
     private func configureAudioSession(forPlayback: Bool = true) {
+        guard !bypassAudioSession else {
+            print("[CallSoundService] 跳过音频会话配置: bypassAudioSession=true (通话中)")
+            return
+        }
         let session = AVAudioSession.sharedInstance()
         do {
             if forPlayback {
@@ -88,11 +97,15 @@ public class CallSoundService {
         }
     }
     
-    /// 恢复音频会话为通话模式
+    /// 恢复音频会话为通话模式（.playAndRecord，Agora 引擎需要双向音频）
     private func restoreAudioSession() {
+        guard !bypassAudioSession else {
+            print("[CallSoundService] 跳过恢复音频会话: bypassAudioSession=true (通话中)")
+            return
+        }
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .voiceChat)
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker])
             try session.setActive(true)
         } catch {
             print("[CallSoundService] 恢复音频会话失败: \(error.localizedDescription)")

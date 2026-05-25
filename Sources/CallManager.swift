@@ -271,18 +271,22 @@ public class CallManager {
             // 连接中，停止铃声
             soundService.stopAllSounds()
         case .connected:
-            // 通话接通，停止铃声，播放接通提示音
+            // 通话接通：标记 bypassAudioSession，防止后续声音操作覆盖 Agora 音频会话
+            soundService.bypassAudioSession = true
             soundService.stopAllSounds()
             soundService.playCallConnectedSound()
         case .disconnected:
-            // 通话挂断，先停止铃声再播放挂断提示音
+            // 通话挂断：恢复音频会话可控，播放挂断提示音
+            soundService.bypassAudioSession = false
             soundService.stopAllSounds()
             soundService.playCallEndedSound()
         case .failed:
             // 通话失败，停止所有声音
+            soundService.bypassAudioSession = false
             soundService.stopAllSounds()
         case .idle:
-            // 空闲，确保停止所有声音
+            // 空闲，确保停止所有声音并重置 bypass
+            soundService.bypassAudioSession = false
             soundService.stopAllSounds()
         default:
             break
@@ -416,10 +420,15 @@ public class CallManager {
             }
             switch result {
             case .success:
+                // 原子切换状态：防止异步间隙中远端已取消导致状态不一致
+                guard self.transitionState(from: .incoming, to: .connecting) else {
+                    self.log("⚠️ 接听: 状态已变化（异步间隙中远端取消等），放弃切换")
+                    completion?(false)
+                    return
+                }
                 let effectiveCallID = self.currentCallID ?? ""
                 self.signalDelegate?.sendAcceptResponse(callID: effectiveCallID, toUserId: remoteUser.userId) { _ in }
-                self.currentState = .connecting
-                
+
                 // ========== 通知 CallKit/LiveCommunicationKit 停止来电界面 ==========
                 // 当用户在 App 内点击"接受"时，需要通知系统来电界面通话已接听
                 if self.useLiveCommunicationKit {
