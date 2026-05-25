@@ -253,19 +253,19 @@ public class LiveCommunicationKitManager: NSObject {
         isShowingIncomingCall = false
         
         // 如果有待处理的 action，说明用户已经在系统 UI 点击了
-//        if let action = pendingAction {
-//            if action is JoinConversationAction {
-//                // 用户点击了接听，标记为接受并关闭 Live Activity
-//                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击接听，关闭 Live Activity")
-//                action.fulfill()
-//            } else if action is EndConversationAction {
-//                // 用户点击了拒绝，标记为拒绝并关闭 Live Activity
-//                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击拒绝，关闭 Live Activity")
-//                action.fail()
-//            }
-//            pendingAction = nil
-//            return
-//        }
+        if let action = pendingAction {
+            if action is JoinConversationAction {
+                // 用户点击了接听，标记为接受并关闭 Live Activity
+                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击接听，关闭 Live Activity")
+                action.fulfill()
+            } else if action is EndConversationAction {
+                // 用户点击了拒绝，标记为拒绝并关闭 Live Activity
+                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击拒绝，关闭 Live Activity")
+                action.fail()
+            }
+            pendingAction = nil
+            return
+        }
         
         // 没有待处理的 action，说明用户还没操作
         // 尝试强制关闭 Live Activity
