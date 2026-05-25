@@ -14,8 +14,61 @@ public class CallManager {
     public static let shared = CallManager()
     
     // MARK: - 日志
-    private func log(_ message: String, function: String = #function) {
-        print("[CallManager] \(function) | \(message) | currentState=\(currentState)")
+    
+    /// 日志级别
+    public enum LogLevel: Int, Comparable {
+        case debug = 0
+        case info = 1
+        case warning = 2
+        case error = 3
+        case none = 4
+        
+        public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+        
+        var prefix: String {
+            switch self {
+            case .debug: return "🔍"
+            case .info: return "ℹ️"
+            case .warning: return "⚠️"
+            case .error: return "❌"
+            case .none: return ""
+            }
+        }
+    }
+    
+    /// 当前日志级别，低于此级别的日志不输出
+    public var logLevel: LogLevel = {
+        #if DEBUG
+        return .debug
+        #else
+        return .warning
+        #endif
+    }()
+    
+    private func log(_ message: String, level: LogLevel = .info, function: String = #function) {
+        guard level >= logLevel else { return }
+        print("\(level.prefix) [CallManager] \(function) | \(message)")
+    }
+    
+    /// 验证必要的依赖是否已注入
+    private func validateDependencies() {
+        if signalDelegate == nil {
+            log("⚠️⚠️⚠️ signalDelegate 未设置！通话信令将无法发送", level: .error)
+            #if DEBUG
+            assertionFailure("[CallManager] signalDelegate 未设置，请在使用前调用 configure()")
+            #endif
+        }
+        if userProvider == nil {
+            log("⚠️⚠️⚠️ userProvider 未设置！无法获取用户信息", level: .error)
+            #if DEBUG
+            assertionFailure("[CallManager] userProvider 未设置，请在使用前调用 configure()")
+            #endif
+        }
+        if tokenProvider == nil {
+            log("⚠️⚠️⚠️ tokenProvider 未设置！无法获取Token", level: .warning)
+        }
     }
     
     // MARK: - 外部注入组件
@@ -57,7 +110,7 @@ public class CallManager {
             stateLock.unlock()
             guard oldValue != newValue else { return }
             // didSet 逻辑：锁外执行，避免死锁
-            log("状态变化: \(oldValue) → \(newValue)")
+            log("状态变化: \(oldValue) → \(newValue)", level: .debug)
             handleSoundForStateChange(from: oldValue, to: newValue)
             if Thread.isMainThread {
                 uiDelegate.callStateDidChange(newValue)
@@ -82,7 +135,7 @@ public class CallManager {
         stateLock.unlock()
         // didSet 逻辑在锁外执行
         if oldValue != newState {
-            log("状态变化: \(oldValue) → \(newState)")
+            log("状态变化: \(oldValue) → \(newState)", level: .debug)
             handleSoundForStateChange(from: oldValue, to: newState)
             if Thread.isMainThread {
                 uiDelegate.callStateDidChange(newState)
@@ -102,7 +155,7 @@ public class CallManager {
         _currentState = newState
         stateLock.unlock()
         guard oldValue != newState else { return oldValue }
-        log("状态变化: \(oldValue) → \(newState)")
+        log("状态变化: \(oldValue) → \(newState)", level: .debug)
         handleSoundForStateChange(from: oldValue, to: newState)
         if Thread.isMainThread {
             uiDelegate.callStateDidChange(newState)
@@ -304,18 +357,19 @@ public class CallManager {
     ///   - token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     ///   - completion: 完成回调
     public func startCall(to user: CallUser, channelName: String, callType: CallType, callID: String? = nil, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        validateDependencies()
         log("发起单聊通话: user=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), callID=\(callID ?? "nil"), hasDirectToken=\(token != nil && !token!.isEmpty)")
         
         guard let userId = userProvider?.currentUserId else {
-            log("⚠️ 发起失败: 无法获取当前用户ID")
-            failWithError("无法获取当前用户ID", completion: completion)
+            log("发起失败: 无法获取当前用户ID", level: .error)
+            failWithError(.userNotAvailable, completion: completion)
             return
         }
         
         // 原子地检查 idle 并切换到 calling，防止竞态
         guard transitionState(from: .idle, to: .calling) else {
-            log("⚠️ 发起失败: 当前状态不是 idle")
-            failWithError("已有通话进行中", completion: completion)
+            log("发起失败: 当前状态不是 idle", level: .warning)
+            failWithError(.invalidState(current: "\(currentState)", expected: "idle"), completion: completion)
             return
         }
         
@@ -338,15 +392,15 @@ public class CallManager {
                 let effectiveCallID = self.currentCallID ?? ""
                 self.signalDelegate?.sendCallRequest(callID: effectiveCallID, toUserId: user.userId, channelName: channelName, token: token, callType: callType) { result in
                     if case .failure(let error) = result {
-                        self.log("⚠️ 发送信令失败: \(error.localizedDescription)")
-                        self.failWithError(error.localizedDescription)
+                        self.log("发送信令失败: \(error.localizedDescription)", level: .error)
+                        self.failWithError(.signalFailed(underlying: error))
                     } else {
                         self.log("发送信令成功")
                     }
                 }
             case .failure(let error):
-                self.log("⚠️ 获取 Token 失败: \(error.localizedDescription)")
-                self.failWithError(error.localizedDescription)
+                self.log("获取 Token 失败: \(error.localizedDescription)", level: .error)
+                self.failWithError(.tokenFetchFailed(underlying: error))
             }
         }
     }
@@ -358,18 +412,19 @@ public class CallManager {
     ///   - token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     ///   - completion: 完成回调
     public func startGroupCall(channelName: String, callType: CallType, token: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        validateDependencies()
         log("发起群聊通话: channel=\(channelName), type=\(callType), hasDirectToken=\(token != nil && !token!.isEmpty)")
         
         guard let userId = userProvider?.currentUserId else {
-            log("⚠️ 发起失败: 无法获取当前用户ID")
-            completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "无法获取当前用户ID"])))
+            log("发起失败: 无法获取当前用户ID", level: .error)
+            completion?(.failure(CallError.userNotAvailable))
             return
         }
         
         // 原子地检查 idle 并切换到 calling
         guard transitionState(from: .idle, to: .calling) else {
-            log("⚠️ 发起失败: 当前状态不是 idle")
-            completion?(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "已有通话进行中"])))
+            log("发起失败: 当前状态不是 idle", level: .warning)
+            completion?(.failure(CallError.invalidState(current: "\(currentState)", expected: "idle")))
             return
         }
         
@@ -388,8 +443,8 @@ public class CallManager {
             case .success(let token):
                 self.currentToken = token
             case .failure(let error):
-                self.log("⚠️ 获取 Token 失败: \(error.localizedDescription)")
-                self.failWithError(error.localizedDescription)
+                self.log("获取 Token 失败: \(error.localizedDescription)", level: .error)
+                self.failWithError(.tokenFetchFailed(underlying: error))
             }
         }
     }
@@ -400,13 +455,14 @@ public class CallManager {
     /// - Parameter skipPresentUI: 是否跳过 present 控制器（当 App 层已自行 present 时传 true）
     /// - Parameter token: 可选 token，如果不为 nil 且非空字符串则直接使用，否则通过 tokenProvider 获取
     public func acceptCall(skipPresentUI: Bool = false, token: String? = nil, completion: ((Bool) -> Void)? = nil) {
+        validateDependencies()
         log("接听来电, skipPresentUI=\(skipPresentUI), hasDirectToken=\(token != nil && !token!.isEmpty), currentState=\(currentState), callID=\(currentCallID ?? "nil")")
         guard currentState == .incoming,
               let channel = currentChannel,
               let callType = currentCallType,
               let remoteUser = currentRemoteUser,
               let userId = userProvider?.currentUserId else {
-            log("⚠️ 接听失败: guard 不通过 (state=\(currentState), channel=\(currentChannel ?? "nil"), callType=\(currentCallType), remoteUser=\(currentRemoteUser), userId=\(userProvider?.currentUserId ?? "nil"))")
+            log("接听失败: guard 不通过 (state=\(currentState), channel=\(currentChannel ?? "nil"), callType=\(currentCallType), remoteUser=\(currentRemoteUser), userId=\(userProvider?.currentUserId ?? "nil"))", level: .warning)
             completion?(false)
             return
         }
@@ -422,7 +478,7 @@ public class CallManager {
             case .success:
                 // 原子切换状态：防止异步间隙中远端已取消导致状态不一致
                 guard self.transitionState(from: .incoming, to: .connecting) else {
-                    self.log("⚠️ 接听: 状态已变化（异步间隙中远端取消等），放弃切换")
+                    self.log("接听: 状态已变化（异步间隙中远端取消等），放弃切换", level: .warning)
                     completion?(false)
                     return
                 }
@@ -453,8 +509,8 @@ public class CallManager {
                 
                 completion?(true)
             case .failure(let error):
-                self.log("⚠️ 接听: 获取 Token 失败: \(error.localizedDescription)")
-                self.failWithError(error.localizedDescription)
+                self.log("接听: 获取 Token 失败: \(error.localizedDescription)", level: .error)
+                self.failWithError(.tokenFetchFailed(underlying: error))
                 completion?(false)
             }
         }
@@ -464,7 +520,7 @@ public class CallManager {
     public func rejectCall() {
         log("拒绝来电, callID=\(currentCallID ?? "nil")")
         guard currentState == .incoming, let remoteUser = currentRemoteUser else {
-            log("⚠️ 拒绝失败: guard 不通过 (state=\(currentState), remoteUser=\(currentRemoteUser))")
+            log("拒绝失败: guard 不通过 (state=\(currentState), remoteUser=\(currentRemoteUser))", level: .warning)
             return
         }
         stopCallingTimeout()
@@ -477,7 +533,7 @@ public class CallManager {
     public func hangUp() {
         log("挂断通话, callID=\(currentCallID ?? "nil")")
         guard currentState != .idle, currentState != .disconnected else {
-            log("⚠️ 挂断忽略: 当前状态=\(currentState)")
+            log("挂断忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         stopCallingTimeout()
@@ -510,8 +566,8 @@ public class CallManager {
             self.log("使用直接传入的 Token, 加入频道...")
             let success = engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
             if !success {
-                self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
-                completion(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
+                self.log("加入频道失败 (engine.joinChannel 返回 false)", level: .error)
+                completion(.failure(CallError.engineError(underlying: nil)))
                 return
             }
             completion(.success(token))
@@ -526,8 +582,8 @@ public class CallManager {
                 self.log("通过 tokenProvider 获取 Token 成功, 加入频道...")
                 let success = self.engine.joinChannel(channelName, token: token, uid: UInt(userId) ?? 0, isVideoCall: callType == .video)
                 if !success {
-                    self.log("⚠️ 加入频道失败 (engine.joinChannel 返回 false)")
-                    completion(.failure(NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "加入频道失败"])))
+                    self.log("加入频道失败 (engine.joinChannel 返回 false)", level: .error)
+                    completion(.failure(CallError.engineError(underlying: nil)))
                     return
                 }
                 completion(.success(token))
@@ -616,9 +672,10 @@ public class CallManager {
     ///   - incomingType: 来电类型
     ///   - systemUICompletion: 系统来电界面完成回调
     public func receiveIncomingCall(callID: String? = nil, from user: CallUser, channelName: String, token: String, callType: CallType, incomingType: IncomingCallType = .normal, systemUICompletion: @escaping (Bool) -> Void) {
+        validateDependencies()
         log("收到来电: from=\(user.name)(userId:\(user.userId)), channel=\(channelName), type=\(callType), callID=\(callID ?? "nil")")
         guard user.userId != userProvider?.currentUserId else {
-            log("⚠️ 来电忽略: 是自己")
+            log("来电忽略: 是自己", level: .warning)
             return
         }
         guard currentState == .idle else {
@@ -631,7 +688,7 @@ public class CallManager {
                 }
             } else {
                 // 不同房间的来电，自动拒绝
-                log("⚠️ 来电忙碌: 当前状态=\(currentState), 不同房间，自动拒绝")
+                log("来电忙碌: 当前状态=\(currentState), 不同房间，自动拒绝", level: .warning)
                 if let callID = callID {
                     signalDelegate?.sendRejectResponse(callID: callID, toUserId: user.userId, reason: "busy") { _ in }
                 }
@@ -696,12 +753,12 @@ public class CallManager {
     public func onCallAccepted(callID: String, fromUserId: String) {
         log("对方接受: callID=\(callID), fromUserId=\(fromUserId)")
         guard currentState == .calling || currentState == .connecting else {
-            log("⚠️ 接受忽略: 当前状态=\(currentState)")
+            log("接受忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理（userId 可能因 App 端数据源不同而不匹配）
         if currentRemoteUser?.userId != fromUserId {
-            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
+            log("userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理", level: .warning)
         }
         // 更新 callID（如果之前为空）
         if currentCallID == nil {
@@ -720,12 +777,12 @@ public class CallManager {
         log("对方拒绝: callID=\(callID), fromUserId=\(fromUserId), reason=\(reason ?? "nil")")
         // 允许从 calling/connecting/connected 状态拒绝（对方可能先加入频道再拒绝）
         guard currentState == .calling || currentState == .connecting || currentState == .connected else {
-            log("⚠️ 拒绝忽略: 当前状态=\(currentState)")
+            log("拒绝忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理
         if currentRemoteUser?.userId != fromUserId {
-            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
+            log("userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理", level: .warning)
         }
         stopCallingTimeout()
         disconnectCall(error: nil)
@@ -738,12 +795,12 @@ public class CallManager {
     public func onCallHangup(callID: String, fromUserId: String) {
         log("对方挂断: callID=\(callID), fromUserId=\(fromUserId)")
         guard currentState != .idle && currentState != .disconnected else {
-            log("⚠️ 挂断忽略: 当前状态=\(currentState)")
+            log("挂断忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理
         if currentRemoteUser?.userId != fromUserId {
-            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
+            log("userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理", level: .warning)
         }
         stopCallingTimeout()
         disconnectCall(error: nil)
@@ -756,12 +813,12 @@ public class CallManager {
     public func onCallCanceled(callID: String, fromUserId: String) {
         log("对方取消: callID=\(callID), fromUserId=\(fromUserId)")
         guard currentState == .incoming || currentState == .calling else {
-            log("⚠️ 取消忽略: 当前状态=\(currentState)")
+            log("取消忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理
         if currentRemoteUser?.userId != fromUserId {
-            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
+            log("userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理", level: .warning)
         }
         stopCallingTimeout()
         disconnectCall(error: nil)
@@ -772,17 +829,17 @@ public class CallManager {
     ///   - callID: 服务端返回的通话标识符
     ///   - fromUserId: 呼叫失败用户ID
     public func onCallFailed(callID: String, fromUserId: String, reason: String?) {
-        log("对方呼叫失败: fromUserId=\(fromUserId), reason=\(reason ?? "未知原因")")
+        log("对方呼叫失败: fromUserId=\(fromUserId), reason=\(reason ?? "未知原因")", level: .warning)
         guard currentState != .idle && currentState != .disconnected && currentState != .failed else {
-            log("⚠️ 呼叫失败忽略: 当前状态=\(currentState)")
+            log("呼叫失败忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理
         if currentRemoteUser?.userId != fromUserId {
-            log("⚠️ userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理")
+            log("userId 不匹配 (remoteUserId=\(currentRemoteUser?.userId ?? "nil"), fromUserId=\(fromUserId))，但仍处理", level: .warning)
         }
         stopCallingTimeout()
-        let error = NSError(domain: "CallManager", code: -2, userInfo: [NSLocalizedDescriptionKey: reason ?? "呼叫失败"])
+        let error = CallError.custom(message: reason ?? "呼叫失败")
         disconnectCall(error: error)
     }
     
@@ -807,7 +864,7 @@ public class CallManager {
         
         // 状态变更的 didSet 逻辑（锁外执行）
         if oldState != targetState {
-            log("状态变化: \(oldState) → \(targetState)")
+            log("状态变化: \(oldState) → \(targetState)", level: .debug)
             handleSoundForStateChange(from: oldState, to: targetState)
             if Thread.isMainThread {
                 uiDelegate.callStateDidChange(targetState)
@@ -845,9 +902,8 @@ public class CallManager {
         }
     }
     
-    private func failWithError(_ message: String, completion: ((Result<Void, Error>) -> Void)? = nil) {
-        log("⚠️ failWithError: \(message)")
-        let error = NSError(domain: "CallManager", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
+    private func failWithError(_ error: CallError, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        log("failWithError: \(error.localizedDescription)", level: .error)
         stopCallingTimeout()
         // 统一走 disconnectCall，避免 didDisconnect 重复调用
         disconnectCall(error: error)
@@ -928,7 +984,7 @@ public class CallManager {
         callingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: callingTimeoutInterval, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             if self.currentState == .calling || self.currentState == .incoming || self.currentState == .connecting {
-                self.log("⚠️ 呼叫超时! 通知 App 端处理")
+                self.log("呼叫超时! 通知 App 端处理", level: .warning)
                 self.stopCallingTimeout()
                 DispatchQueue.main.async {
                     self.uiDelegate.didCallTimeout()
@@ -1056,7 +1112,7 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, didOccurError error: Error) {
-        log("⚠️ 引擎回调: 发生错误: \(error.localizedDescription)")
+        log("引擎回调: 发生错误: \(error.localizedDescription)", level: .error)
         DispatchQueue.main.async { [weak self] in
             self?.uiDelegate.didOccurError(error)
             self?.disconnectCall(error: error)
@@ -1248,7 +1304,7 @@ extension CallManager: LiveCommunicationKitManagerDelegate {
             // 已接通的通话 → 挂断
             hangUp()
         default:
-            log("⚠️ 拒绝/挂断忽略: 无效状态=\(currentState)")
+            log("拒绝/挂断忽略: 无效状态=\(currentState)", level: .warning)
             break
         }
     }

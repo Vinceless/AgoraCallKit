@@ -17,8 +17,11 @@ public class PIPVideoFrameDelegate: NSObject, AgoraVideoFrameDelegate {
     
     private var frameCount: Int64 = 0
     private var lastEnqueueTime: CFTimeInterval = 0
-    private let enqueueInterval: CFTimeInterval = 1.0 / 15.0  // 15fps 节流
-    
+
+    /// PiP 视频帧节流间隔，默认 1/15 秒（15fps）。
+    /// 可在外部按需调整以平衡画质与性能。
+    public var frameThrottleInterval: TimeInterval = 1.0 / 15.0
+
     init(pipManager: PictureInPictureManager?) {
         self.pipManager = pipManager
         super.init()
@@ -44,7 +47,7 @@ public class PIPVideoFrameDelegate: NSObject, AgoraVideoFrameDelegate {
     /// 远端视频帧回调 —— 在 preRenderer 位置触发
     public func onRenderVideoFrame(_ videoFrame: AgoraOutputVideoFrame, uid: UInt, channelId: String) -> Bool {
         let now = CACurrentMediaTime()
-        guard now - lastEnqueueTime >= enqueueInterval else { return true }
+        guard now - lastEnqueueTime >= frameThrottleInterval else { return true }
         lastEnqueueTime = now
         
         guard let pixelBuffer = videoFrame.pixelBuffer else { return true }
