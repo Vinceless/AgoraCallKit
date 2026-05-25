@@ -15,41 +15,20 @@ public class CallManager {
     
     // MARK: - 日志
     
-    /// 日志级别
-    public enum LogLevel: Int, Comparable {
-        case debug = 0
-        case info = 1
-        case warning = 2
-        case error = 3
-        case none = 4
-        
-        public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
-            lhs.rawValue < rhs.rawValue
-        }
-        
-        var prefix: String {
-            switch self {
-            case .debug: return "🔍"
-            case .info: return "ℹ️"
-            case .warning: return "⚠️"
-            case .error: return "❌"
-            case .none: return ""
-            }
-        }
+    /// 向后兼容的日志级别别名（推荐使用 AgoraLogLevel）
+    @available(*, deprecated, renamed: "AgoraLogLevel")
+    public typealias LogLevel = AgoraLogLevel
+    
+    /// 当前日志级别（委托给 AgoraLogger，保持向后兼容）
+    @available(*, deprecated, message: "请使用 AgoraLogger.shared.minimumLevel")
+    public var logLevel: AgoraLogLevel {
+        get { AgoraLogger.shared.minimumLevel }
+        set { AgoraLogger.shared.minimumLevel = newValue }
     }
     
-    /// 当前日志级别，低于此级别的日志不输出
-    public var logLevel: LogLevel = {
-        #if DEBUG
-        return .debug
-        #else
-        return .warning
-        #endif
-    }()
-    
-    private func log(_ message: String, level: LogLevel = .info, function: String = #function) {
-        guard level >= logLevel else { return }
-        print("\(level.prefix) [CallManager] \(function) | \(message)")
+    /// 内部日志输出，统一委托给 AgoraLogger
+    private func log(_ message: String, level: AgoraLogLevel = .info, function: String = #function) {
+        AgoraLogger.shared.log(message, level: level, module: "CallManager", function: function)
     }
     
     /// 验证必要的依赖是否已注入
@@ -245,7 +224,7 @@ public class CallManager {
             if CallConfiguration.shared.isLiveCommunicationKitEnabled {
                 LiveCommunicationKitManager.shared.delegate = self
                 LiveCommunicationKitManager.shared.configure()
-                print("[CallManager] LiveCommunicationKit 已启用（iOS 17.4+）")
+                log("LiveCommunicationKit 已启用（iOS 17.4+）")
             }
         }
         #if !CHINA_APP_STORE

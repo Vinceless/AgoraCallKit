@@ -81,7 +81,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     /// 若 bypassAudioSession = true（通话中），则跳过配置，避免覆盖 Agora 的音频会话
     private func configureAudioSession(forPlayback: Bool = true) {
         guard !bypassAudioSession else {
-            print("[CallSoundService] 跳过音频会话配置: bypassAudioSession=true (通话中)")
+            AgoraLogger.info("跳过音频会话配置: bypassAudioSession=true (通话中)", module: "CallSoundService")
             return
         }
         let session = AVAudioSession.sharedInstance()
@@ -93,14 +93,14 @@ public class CallSoundService: CallSoundServiceProtocol {
             }
             try session.setActive(true)
         } catch {
-            print("[CallSoundService] 配置音频会话失败: \(error.localizedDescription)")
+            AgoraLogger.info("配置音频会话失败: \(error.localizedDescription)", module: "CallSoundService")
         }
     }
     
     /// 恢复音频会话为通话模式（.playAndRecord，Agora 引擎需要双向音频）
     private func restoreAudioSession() {
         guard !bypassAudioSession else {
-            print("[CallSoundService] 跳过恢复音频会话: bypassAudioSession=true (通话中)")
+            AgoraLogger.info("跳过恢复音频会话: bypassAudioSession=true (通话中)", module: "CallSoundService")
             return
         }
         let session = AVAudioSession.sharedInstance()
@@ -108,7 +108,7 @@ public class CallSoundService: CallSoundServiceProtocol {
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .defaultToSpeaker])
             try session.setActive(true)
         } catch {
-            print("[CallSoundService] 恢复音频会话失败: \(error.localizedDescription)")
+            AgoraLogger.info("恢复音频会话失败: \(error.localizedDescription)", module: "CallSoundService")
         }
     }
     
@@ -116,7 +116,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     
     /// 开始播放来电彩铃 + 震动
     public func startIncomingRingtone() {
-        print("[CallSoundService] 开始来电彩铃")
+        AgoraLogger.info("开始来电彩铃", module: "CallSoundService")
         stopAllSounds()
         
         if isSoundEnabled {
@@ -141,7 +141,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     
     /// 停止来电彩铃
     public func stopIncomingRingtone() {
-        print("[CallSoundService] 停止来电彩铃")
+        AgoraLogger.info("停止来电彩铃", module: "CallSoundService")
         stopRingtonePlayer()
         stopVibration()
         stopSystemRingtone()
@@ -152,7 +152,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     
     /// 开始播放呼叫等待音（主叫拨出后等待对方接听）
     public func startOutgoingRingtone() {
-        print("[CallSoundService] 开始呼叫等待音")
+        AgoraLogger.info("开始呼叫等待音", module: "CallSoundService")
         stopAllSounds()
         
         if isSoundEnabled {
@@ -171,7 +171,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     
     /// 停止呼叫等待音
     public func stopOutgoingRingtone() {
-        print("[CallSoundService] 停止呼叫等待音")
+        AgoraLogger.info("停止呼叫等待音", module: "CallSoundService")
         stopRingtonePlayer()
         stopSystemRingtone()
         isPlayingRingtone = false
@@ -181,7 +181,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     
     /// 播放接通提示音
     public func playCallConnectedSound() {
-        print("[CallSoundService] 播放接通提示音")
+        AgoraLogger.info("播放接通提示音", module: "CallSoundService")
         guard isSoundEnabled else { return }
         if let path = callConnectedSoundPath {
             playEffectSound(at: path)
@@ -193,7 +193,7 @@ public class CallSoundService: CallSoundServiceProtocol {
     
     /// 播放挂断提示音
     public func playCallEndedSound() {
-        print("[CallSoundService] 播放挂断提示音")
+        AgoraLogger.info("播放挂断提示音", module: "CallSoundService")
         guard isSoundEnabled else { return }
         if let path = callEndedSoundPath {
             playEffectSound(at: path)
@@ -240,7 +240,7 @@ public class CallSoundService: CallSoundServiceProtocol {
             player.play()
             ringtonePlayer = player
         } catch {
-            print("[CallSoundService] 播放铃声文件失败: \(path), error: \(error.localizedDescription)")
+            AgoraLogger.info("播放铃声文件失败: \(path), error: \(error.localizedDescription)", module: "CallSoundService")
         }
     }
     
@@ -255,7 +255,7 @@ public class CallSoundService: CallSoundServiceProtocol {
             player.play()
             effectPlayer = player
         } catch {
-            print("[CallSoundService] 播放提示音文件失败: \(path), error: \(error.localizedDescription)")
+            AgoraLogger.info("播放提示音文件失败: \(path), error: \(error.localizedDescription)", module: "CallSoundService")
         }
     }
     

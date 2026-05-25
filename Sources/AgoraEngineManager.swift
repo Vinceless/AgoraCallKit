@@ -78,7 +78,7 @@ public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
         if !CallConfiguration.shared.isCallKitEnabled {
             setupAudioSession()
         } else {
-            print("[AgoraEngineManager] 使用 CallKit/LiveCommunicationKit，跳过手动激活 AVAudioSession")
+            AgoraLogger.info("使用 CallKit/LiveCommunicationKit，跳过手动激活 AVAudioSession", module: "AgoraEngineManager")
         }
         
         // 设置视频编码配置
@@ -107,7 +107,7 @@ public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .defaultToSpeaker])
             try session.setActive(true)
         } catch {
-            print("Audio session error: \(error)")
+            AgoraLogger.error("Audio session error: \(error)", module: "AgoraEngineManager")
         }
     }
     
@@ -286,14 +286,14 @@ extension AgoraEngineManager: AgoraRtcEngineDelegate {
     
     /// Token 即将过期（提前 30 秒通知）
     public func rtcEngine(_ engine: AgoraRtcEngineKit, tokenPrivilegeWillExpire token: String) {
-        print("[AgoraEngineManager] Token 即将过期，需要刷新")
+        AgoraLogger.info("Token 即将过期，需要刷新", module: "AgoraEngineManager")
         // 通知 delegate 刷新 Token
         delegate?.engine(self, tokenPrivilegeWillExpire: token)
     }
     
     /// Token 已过期，引擎请求新 Token
     public func rtcEngine(_ engine: AgoraRtcEngineKit, requestTokenWithCallback callback: @escaping (String) -> Void) {
-        print("[AgoraEngineManager] 服务端要求刷新 Token")
+        AgoraLogger.info("服务端要求刷新 Token", module: "AgoraEngineManager")
         delegate?.engine(self, requestTokenWithCallback: callback)
     }
     

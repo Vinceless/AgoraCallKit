@@ -88,14 +88,14 @@ public class VoIPPushManager: NSObject {
         registry.desiredPushTypes = [.voIP]
         self.pushRegistry = registry
         
-        print("[VoIPPushManager] 已注册 PushKit VoIP 推送)")
+        AgoraLogger.info("已注册 PushKit VoIP 推送", module: "VoIPPushManager")
         
     }
     
     /// 清除最后一次推送的 payload 记录
     public func clearLastPayload() {
         lastPayload = nil
-        print("[VoIPPushManager] 已清除推送记录")
+        AgoraLogger.info("已清除推送记录", module: "VoIPPushManager")
     }
 }
 
@@ -106,12 +106,12 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     /// VoIP Token 更新
     public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
         voipTokenPublisher.send(pushCredentials.token)
-        print("[VoIPPushManager] VoIP Token 更新")
+        AgoraLogger.info("VoIP Token 更新", module: "VoIPPushManager")
     }
     
     /// 收到 VoIP 推送
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping @Sendable () -> Void) {
-        print("[VoIPPushManager] 收到 VoIP 推送")
+        AgoraLogger.info("收到 VoIP 推送", module: "VoIPPushManager")
         
         lastPayload = payload.dictionaryPayload
         
@@ -121,7 +121,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
         }
         
         guard let payloadDelegate = payloadDelegate else {
-            print("[VoIPPushManager] ⚠️ 未设置 payloadDelegate，无法解析推送")
+            AgoraLogger.warning("未设置 payloadDelegate，无法解析推送", module: "VoIPPushManager")
             completion()
             return
         }
@@ -134,12 +134,12 @@ extension VoIPPushManager: PKPushRegistryDelegate {
                 // 解析成功，交给 CallManager 处理来电
                 self.handleIncomingCall(info: info) { success in
                     if !success {
-                        print("[VoIPPushManager] ⚠️ 系统来电界面显示失败")
+                        AgoraLogger.warning("系统来电界面显示失败", module: "VoIPPushManager")
                     }
                     completion()
                 }
             } else {
-                print("[VoIPPushManager] ⚠️ App 解析 payload 返回 nil，忽略此推送")
+                AgoraLogger.warning("App 解析 payload 返回 nil，忽略此推送", module: "VoIPPushManager")
                 completion()
             }
         }
@@ -147,7 +147,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
     
     /// VoIP 推送处理失败
     public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
-        print("[VoIPPushManager] VoIP Token 失效")
+        AgoraLogger.info("VoIP Token 失效", module: "VoIPPushManager")
         voipTokenPublisher.send(Data())
     }
     

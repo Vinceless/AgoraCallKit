@@ -98,7 +98,7 @@ private final class RetryableOperation: Operation {
 
         guard let result = sendResult else {
             let error = NSError(domain: "SignalRetryManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "信令发送无响应"])
-            print("[SignalRetryManager] 信令发送无响应")
+            AgoraLogger.info("信令发送无响应", module: "SignalRetryManager")
             completion(.failure(error))
             return
         }
@@ -111,11 +111,11 @@ private final class RetryableOperation: Operation {
                 remainingRetries -= 1
                 let delay = currentDelay
                 currentDelay = min(currentDelay * policy.multiplier, policy.maxDelay)
-                print("[SignalRetryManager] 信令发送失败，\(delay)s 后重试（剩余 \(remainingRetries) 次）: \(error.localizedDescription)")
+                AgoraLogger.info("信令发送失败，\(delay)s 后重试（剩余 \(remainingRetries) 次）: \(error.localizedDescription)", module: "SignalRetryManager")
                 Thread.sleep(forTimeInterval: delay)
                 attemptSend()
             } else {
-                print("[SignalRetryManager] 信令发送失败，重试次数已用完: \(error.localizedDescription)")
+                AgoraLogger.info("信令发送失败，重试次数已用完: \(error.localizedDescription)", module: "SignalRetryManager")
                 completion(.failure(error))
             }
         }

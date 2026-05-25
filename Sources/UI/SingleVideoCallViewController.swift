@@ -161,7 +161,7 @@ open class SingleVideoCallViewController: BaseCallViewController {
     // MARK: - 重写连接回调，设置本地视频
     open override func didJoinChannel(withUser user: CallUser) {
         super.didJoinChannel(withUser: user)
-        print("[SingleVideo] didJoinChannel: miniVideoView.bounds=\(miniVideoView.bounds), window=\(miniVideoView.window != nil)")
+        AgoraLogger.info("didJoinChannel: miniVideoView.bounds=\(miniVideoView.bounds), window=\(miniVideoView.window != nil)", module: "SingleVideo")
         // 通话连接后设置本地视频渲染
         callManager.setupLocalVideoView(miniVideoView)
         // 关键：启动本地视频预览

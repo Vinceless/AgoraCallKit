@@ -72,7 +72,7 @@ public class PictureInPictureManager: NSObject {
                 controller.canStartPictureInPictureAutomaticallyFromInline = true
                 newController = controller
                 didSetup = true
-                print("[PiP] Controller created, isPictureInPicturePossible: \(controller.isPictureInPicturePossible ?? false)")
+                AgoraLogger.info("Controller created, isPictureInPicturePossible: \(controller.isPictureInPicturePossible ?? false)", module: "PiP")
             } else {
                 // iOS 15 以下不支持 SampleBuffer 模式，移除已添加的视图
                 renderView.removeFromSuperview()
@@ -80,7 +80,7 @@ public class PictureInPictureManager: NSObject {
             }
         } else {
             renderView.removeFromSuperview()
-            print("[PiP] Picture in Picture not supported on this device")
+            AgoraLogger.info("Picture in Picture not supported on this device", module: "PiP")
             return
         }
 
@@ -121,14 +121,14 @@ public class PictureInPictureManager: NSObject {
         lock.unlock()
 
         guard setupReady, inCall else {
-            print("[PiP] Cannot start: isSetup=\(setupReady), isInCall=\(inCall)")
+            AgoraLogger.info("Cannot start: isSetup=\(setupReady), isInCall=\(inCall)", module: "PiP")
             return
         }
         if controller?.isPictureInPicturePossible == true {
             controller?.startPictureInPicture()
-            print("[PiP] startPictureInPicture called")
+            AgoraLogger.info("startPictureInPicture called", module: "PiP")
         } else {
-            print("[PiP] Cannot start: isPictureInPicturePossible=false")
+            AgoraLogger.info("Cannot start: isPictureInPicturePossible=false", module: "PiP")
             if hasFrames {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self else { return }
@@ -139,7 +139,7 @@ public class PictureInPictureManager: NSObject {
                     guard stillInCall else { return }
                     if retryController?.isPictureInPicturePossible == true {
                         retryController?.startPictureInPicture()
-                        print("[PiP] Retry: startPictureInPicture called")
+                        AgoraLogger.info("Retry: startPictureInPicture called", module: "PiP")
                     }
                 }
             }
@@ -231,7 +231,7 @@ public class PictureInPictureManager: NSObject {
                 lock.lock()
                 hasEnqueuedFrames = true
                 lock.unlock()
-                print("[PiP] First frame enqueued")
+                AgoraLogger.info("First frame enqueued", module: "PiP")
             }
         }
     }
@@ -240,32 +240,32 @@ public class PictureInPictureManager: NSObject {
 // MARK: - AVPictureInPictureControllerDelegate
 extension PictureInPictureManager: AVPictureInPictureControllerDelegate {
     public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        print("[PiP] Will start")
+        AgoraLogger.info("Will start", module: "PiP")
         NotificationCenter.default.post(name: .pipWillStart, object: nil)
     }
     
     public func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        print("[PiP] Did start successfully")
+        AgoraLogger.info("Did start successfully", module: "PiP")
     }
     
     public func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        print("[PiP] Will stop")
+        AgoraLogger.info("Will stop", module: "PiP")
     }
     
     public func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        print("[PiP] Did stop")
+        AgoraLogger.info("Did stop", module: "PiP")
         NotificationCenter.default.post(name: .pipDidStop, object: nil)
     }
     
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        print("[PiP] Failed to start with error: \(error.localizedDescription)")
+        AgoraLogger.info("Failed to start with error: \(error.localizedDescription)", module: "PiP")
     }
     
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         lock.lock()
         let inCall = isInCall
         lock.unlock()
-        print("[PiP] Restore user interface requested, isInCall=\(inCall)")
+        AgoraLogger.info("Restore user interface requested, isInCall=\(inCall)", module: "PiP")
         if !inCall {
             // 通话已结束，不需要恢复界面，直接停止画中画
             pictureInPictureController.stopPictureInPicture()

@@ -55,7 +55,7 @@ public class CallKitManager: NSObject {
     /// 仅在 CallConfiguration.shared.isCallKitEnabled = true 时生效
     public func configure() {
         guard CallConfiguration.shared.isCallKitEnabled else {
-            print("[CallKitManager] CallKit 未启用，跳过配置")
+            AgoraLogger.info("CallKit 未启用，跳过配置", module: "CallKitManager")
             return
         }
         
@@ -76,23 +76,23 @@ public class CallKitManager: NSObject {
         if let ringtoneSound = CallConfiguration.shared.callKitRingtoneSound {
             // 显式配置的铃声
             configuration.ringtoneSound = ringtoneSound
-            print("[CallKitManager] 使用显式配置的铃声: \(ringtoneSound)")
+            AgoraLogger.info("使用显式配置的铃声: \(ringtoneSound)", module: "CallKitManager")
         } else if let incomingPath = CallSoundService.shared.incomingRingtonePath {
             // 复用 CallSoundService 的来电铃声（从完整路径提取文件名）
             let ringtoneName = (incomingPath as NSString).lastPathComponent
             configuration.ringtoneSound = ringtoneName
-            print("[CallKitManager] 复用 CallSoundService 铃声: \(ringtoneName)")
+            AgoraLogger.info("复用 CallSoundService 铃声: \(ringtoneName)", module: "CallKitManager")
         } else {
             // 使用系统默认铃声
             configuration.ringtoneSound = nil
-            print("[CallKitManager] 使用系统默认来电铃声")
+            AgoraLogger.info("使用系统默认来电铃声", module: "CallKitManager")
         }
         
         let provider = CXProvider(configuration: configuration)
         provider.setDelegate(self, queue: nil)
         self.provider = provider
         
-        print("[CallKitManager] 已配置 CallKit")
+        AgoraLogger.info("已配置 CallKit", module: "CallKitManager")
     }
     
     // MARK: - 报告来电
@@ -101,15 +101,15 @@ public class CallKitManager: NSObject {
     /// 若 CallKit 未启用则静默忽略，App 通过 uiDelegate 处理来电即可
     public func reportIncomingCall(uuid: UUID, handle: String, callerName: String, isVideo: Bool,
                                    completion: @escaping (Bool) -> Void) {
-        print("[CallKitManager] reportIncomingCall: uuid=\(uuid)")
+        AgoraLogger.info("reportIncomingCall: uuid=\(uuid)", module: "CallKitManager")
         guard CallConfiguration.shared.isCallKitEnabled else {
-            print("[CallKitManager] CallKit 未启用，跳过报告来电")
+            AgoraLogger.info("CallKit 未启用，跳过报告来电", module: "CallKitManager")
             completion(false)
             return
         }
         
         currentCallUUID = uuid
-        print("[CallKitManager] reportIncomingCall: currentCallUUID 已设置为 \(uuid)")
+        AgoraLogger.info("reportIncomingCall: currentCallUUID 已设置为 \(uuid)", module: "CallKitManager")
         
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type: .generic, value: handle)
@@ -122,11 +122,11 @@ public class CallKitManager: NSObject {
         
         provider?.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
             if let error = error {
-                print("[CallKitManager] 报告来电失败: \(error.localizedDescription)")
+                AgoraLogger.info("报告来电失败: \(error.localizedDescription)", module: "CallKitManager")
                 self?.currentCallUUID = nil
                 completion(false)
             } else {
-                print("[CallKitManager] 系统来电界面已显示: \(callerName)")
+                AgoraLogger.info("系统来电界面已显示: \(callerName)", module: "CallKitManager")
                 self?.isShowingIncomingCall = true
                 completion(true)
             }
@@ -145,13 +145,13 @@ public class CallKitManager: NSObject {
     
     /// 报告通话已结束
     public func reportCallEnded(reason: CallEndedReason = .remoteEnded) {
-        print("[CallKitManager] reportCallEnded: isCallKitEnabled=\(CallConfiguration.shared.isCallKitEnabled), currentCallUUID=\(currentCallUUID?.uuidString ?? "nil")")
+        AgoraLogger.info("reportCallEnded: isCallKitEnabled=\(CallConfiguration.shared.isCallKitEnabled), currentCallUUID=\(currentCallUUID?.uuidString ?? "nil")", module: "CallKitManager")
         guard CallConfiguration.shared.isCallKitEnabled else { return }
         guard let uuid = currentCallUUID else {
-            print("[CallKitManager] reportCallEnded: UUID 为空，跳过")
+            AgoraLogger.info("reportCallEnded: UUID 为空，跳过", module: "CallKitManager")
             return
         }
-        print("[CallKitManager] reportCallEnded: uuid=\(uuid), reason=\(reason)")
+        AgoraLogger.info("reportCallEnded: uuid=\(uuid), reason=\(reason)", module: "CallKitManager")
         provider?.reportCall(with: uuid, endedAt: Date(), reason: reason.cxCallEndedReason)
         currentCallUUID = nil
         isShowingIncomingCall = false
@@ -163,7 +163,7 @@ public class CallKitManager: NSObject {
     public func markCallAccepted() {
         guard CallConfiguration.shared.isCallKitEnabled else { return }
         guard let uuid = currentCallUUID else {
-            print("[CallKitManager] markCallAccepted: UUID 为空，跳过")
+            AgoraLogger.info("markCallAccepted: UUID 为空，跳过", module: "CallKitManager")
             return
         }
         // 通过 CXAnswerCallAction 来标记通话已开始，从而停止 CallKit 的震动
@@ -171,9 +171,9 @@ public class CallKitManager: NSObject {
         let transaction = CXTransaction(action: action)
         callController.request(transaction) { error in
             if let error = error {
-                print("[CallKitManager] markCallAccepted 失败: \(error.localizedDescription)")
+                AgoraLogger.info("markCallAccepted 失败: \(error.localizedDescription)", module: "CallKitManager")
             } else {
-                print("[CallKitManager] markCallAccepted 成功，CallKit 来电界面应停止震动")
+                AgoraLogger.info("markCallAccepted 成功，CallKit 来电界面应停止震动", module: "CallKitManager")
                 self.isShowingIncomingCall = false
             }
         }
@@ -184,14 +184,14 @@ public class CallKitManager: NSObject {
     public func dismissIncomingCallUI(hasUserAccepted: Bool = false) {
         guard CallConfiguration.shared.isCallKitEnabled else { return }
         guard let uuid = currentCallUUID, isShowingIncomingCall else {
-            print("[CallKitManager] dismissIncomingCallUI: 无需关闭（UUID=\(currentCallUUID?.uuidString ?? "nil"), isShowing=\(isShowingIncomingCall)）")
+            AgoraLogger.info("dismissIncomingCallUI: 无需关闭（UUID=\(currentCallUUID?.uuidString ?? "nil", default: "CallKitManager"), isShowing=\(isShowingIncomingCall)）", module: "CallKitManager")
             return
         }
-        print("[CallKitManager] dismissIncomingCallUI: 关闭系统来电界面, hasUserAccepted=\(hasUserAccepted)")
+        AgoraLogger.info("dismissIncomingCallUI: 关闭系统来电界面, hasUserAccepted=\(hasUserAccepted)", module: "CallKitManager")
         
         if hasUserAccepted {
             // 用户已在系统界面接听，只关闭界面不结束通话
-            print("[CallKitManager] dismissIncomingCallUI: 用户已接听，标记为需要保持通话")
+            AgoraLogger.info("dismissIncomingCallUI: 用户已接听，标记为需要保持通话", module: "CallKitManager")
             // 标记为不再显示来电界面
             isShowingIncomingCall = false
             // 通知 delegate 通话需要继续（不调用 hangUp）
@@ -199,7 +199,7 @@ public class CallKitManager: NSObject {
         } else {
             // 用户还未接听：直接标记为不显示来电界面，由 App 显示来电弹窗
             // 注意：不调用 CXEndCallAction，避免触发 didEndCall → rejectCall
-            print("[CallKitManager] dismissIncomingCallUI: 用户未接听，标记隐藏，由 App 显示来电弹窗")
+            AgoraLogger.info("dismissIncomingCallUI: 用户未接听，标记隐藏，由 App 显示来电弹窗", module: "CallKitManager")
             isShowingIncomingCall = false
         }
     }
@@ -212,7 +212,7 @@ public class CallKitManager: NSObject {
         let transaction = CXTransaction(action: action)
         callController.request(transaction) { error in
             if let error = error {
-                print("[CallKitManager] 结束通话请求失败: \(error.localizedDescription)")
+                AgoraLogger.info("结束通话请求失败: \(error.localizedDescription)", module: "CallKitManager")
             }
         }
     }
@@ -230,7 +230,7 @@ extension CallKitManager: CXProviderDelegate {
     
     /// 系统来电界面点击接听
     public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        print("[CallKitManager] 用户在系统界面点击了接听")
+        AgoraLogger.info("用户在系统界面点击了接听", module: "CallKitManager")
         action.fulfill()
         isShowingIncomingCall = false
         delegate?.callKitManagerDidAcceptCall()
@@ -238,7 +238,7 @@ extension CallKitManager: CXProviderDelegate {
     
     /// 系统来电界面点击拒绝
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        print("[CallKitManager] 用户在系统界面点击了拒绝/结束")
+        AgoraLogger.info("用户在系统界面点击了拒绝/结束", module: "CallKitManager")
         action.fulfill()
         isShowingIncomingCall = false
         currentCallUUID = nil
@@ -253,18 +253,18 @@ extension CallKitManager: CXProviderDelegate {
     
     /// 通话开始（provider 激活音频会话）
     public func providerDidActivate(_ provider: CXProvider, session: AVAudioSession) {
-        print("[CallKitManager] 音频会话已激活")
+        AgoraLogger.info("音频会话已激活", module: "CallKitManager")
         // CallKit 管理的音频会话已激活，可以开始音频操作
     }
     
     /// 通话结束（provider 停用音频会话）
     public func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-        print("[CallKitManager] 音频会话已停用")
+        AgoraLogger.info("音频会话已停用", module: "CallKitManager")
     }
     
     /// Provider 被系统重置（必须实现的代理方法）
     public func providerDidReset(_ provider: CXProvider) {
-        print("[CallKitManager] Provider 被系统重置")
+        AgoraLogger.info("Provider 被系统重置", module: "CallKitManager")
         isShowingIncomingCall = false
         currentCallUUID = nil
         delegate?.callKitManagerDidReset()   // 通知 CallManager 强制结束通话
@@ -272,7 +272,7 @@ extension CallKitManager: CXProviderDelegate {
     
     /// 超时未接听
     public func provider(_ provider: CXProvider, timedOutPerforming action: CXAction) {
-        print("[CallKitManager] 来电超时未接听")
+        AgoraLogger.info("来电超时未接听", module: "CallKitManager")
         action.fulfill()
         isShowingIncomingCall = false
         currentCallUUID = nil

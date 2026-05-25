@@ -80,7 +80,7 @@ public class LiveCommunicationKitManager: NSObject {
     /// - Important: 必须在 App 启动时调用，且 LiveCommunicationKit 必须在通话到来前初始化
     public func configure() {
         guard LiveCommunicationKitManager.isEnabled else {
-            print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过配置")
+            AgoraLogger.info("LiveCommunicationKit 未启用，跳过配置", module: "LiveCommunicationKit")
             return
         }
         
@@ -112,7 +112,7 @@ public class LiveCommunicationKitManager: NSObject {
         conversationManager = ConversationManager(configuration: config)
         conversationManager?.delegate = self
         
-        print("[LiveCommunicationKitManager] ConversationManager 配置完成")
+        AgoraLogger.info("ConversationManager 配置完成", module: "LiveCommunicationKit")
     }
     
     // MARK: - 报告来电
@@ -129,16 +129,16 @@ public class LiveCommunicationKitManager: NSObject {
     ///   - isVideo: 是否为视频通话
     ///   - completion: 报告完成回调
     public func reportIncomingCall(uuid: UUID, callerName: String, callerAvatar: Data? = nil, isVideo: Bool, completion: @escaping (Bool) -> Void) {
-        print("[LiveCommunicationKitManager] reportIncomingCall 开始: uuid=\(uuid), callerName=\(callerName), isVideo=\(isVideo)")
+        AgoraLogger.info("reportIncomingCall 开始: uuid=\(uuid), callerName=\(callerName), isVideo=\(isVideo)", module: "LiveCommunicationKit")
         
         guard LiveCommunicationKitManager.isEnabled else {
-            print("[LiveCommunicationKitManager] LiveCommunicationKit 未启用，跳过报告来电")
+            AgoraLogger.info("LiveCommunicationKit 未启用，跳过报告来电", module: "LiveCommunicationKit")
             completion(false)
             return
         }
         
         guard let conversationManager = conversationManager else {
-            print("[LiveCommunicationKitManager] ConversationManager 未初始化，请先调用 configure()")
+            AgoraLogger.info("ConversationManager 未初始化，请先调用 configure()", module: "LiveCommunicationKit")
             completion(false)
             return
         }
@@ -154,13 +154,13 @@ public class LiveCommunicationKitManager: NSObject {
         var update = Conversation.Update()
         update.members = [handle]
         
-        print("[LiveCommunicationKitManager] 开始报告新来电 (Live Activity)...")
+        AgoraLogger.info("开始报告新来电 (Live Activity)...", module: "LiveCommunicationKit")
         
         Task { [weak self] in
             guard let self = self else { return }
             do {
                 try await conversationManager.reportNewIncomingConversation(uuid: uuid, update: update)
-                print("[LiveCommunicationKitManager] ✅ Live Activity 来电界面已显示")
+                AgoraLogger.info("✅ Live Activity 来电界面已显示", module: "LiveCommunicationKit")
                 await MainActor.run {
                     self.isShowingIncomingCall = true
                     self.isReportingIncomingCall = false
@@ -168,7 +168,7 @@ public class LiveCommunicationKitManager: NSObject {
                     self.reportCompletion = nil
                 }
             } catch {
-                print("[LiveCommunicationKitManager] ❌ 报告来电失败: \(error.localizedDescription)")
+                AgoraLogger.error("❌ 报告来电失败: \(error.localizedDescription)", module: "LiveCommunicationKit")
                 await MainActor.run {
                     self.isShowingIncomingCall = false
                     self.isReportingIncomingCall = false
@@ -186,19 +186,19 @@ public class LiveCommunicationKitManager: NSObject {
     /// 报告通话已接通
     public func reportCallConnected() {
         guard let conversation = currentConversation else {
-            print("[LiveCommunicationKitManager] 当前没有通话，无法报告接通")
+            AgoraLogger.info("当前没有通话，无法报告接通", module: "LiveCommunicationKit")
             return
         }
         
         let event = Conversation.Event.conversationConnected(Date())
         conversationManager?.reportConversationEvent(event, for: conversation)
-        print("[LiveCommunicationKitManager] 通话已接通")
+        AgoraLogger.info("通话已接通", module: "LiveCommunicationKit")
     }
     
     /// 报告通话已结束
     public func reportCallEnded(reason: String = "ended") {
         guard let conversation = currentConversation else {
-            print("[LiveCommunicationKitManager] 当前没有通话，无法报告结束")
+            AgoraLogger.info("当前没有通话，无法报告结束", module: "LiveCommunicationKit")
             return
         }
         
@@ -214,7 +214,7 @@ public class LiveCommunicationKitManager: NSObject {
         
         let event = Conversation.Event.conversationEnded(Date(), endedReason)
         conversationManager?.reportConversationEvent(event, for: conversation)
-        print("[LiveCommunicationKitManager] 通话已结束: \(reason)")
+        AgoraLogger.info("通话已结束: \(reason)", module: "LiveCommunicationKit")
         
         // 清理状态
         currentConversation = nil
@@ -234,7 +234,7 @@ public class LiveCommunicationKitManager: NSObject {
         isShowingIncomingCall = false
         guard let action = pendingAction else {
             // 已经通过 completion 完成，或者已超时 — 安全忽略
-            print("[LiveCommunicationKitManager] markCallAccepted: pendingAction 已为 nil，跳过")
+            AgoraLogger.info("markCallAccepted: pendingAction 已为 nil，跳过", module: "LiveCommunicationKit")
             return
         }
         action.fulfill()
@@ -249,7 +249,7 @@ public class LiveCommunicationKitManager: NSObject {
             action.fail()
             pendingAction = nil
         } else {
-            print("[LiveCommunicationKitManager] markCallRejected: pendingAction 已为 nil，跳过")
+            AgoraLogger.info("markCallRejected: pendingAction 已为 nil，跳过", module: "LiveCommunicationKit")
         }
         currentConversation = nil
         currentCallUUID = nil
@@ -257,7 +257,7 @@ public class LiveCommunicationKitManager: NSObject {
     
     /// 关闭来电界面（App 进入前台时调用，隐藏 Live Activity 来电界面）
     public func dismissIncomingCallUI() {
-        print("[LiveCommunicationKitManager] dismissIncomingCallUI: isShowingIncomingCall=\(isShowingIncomingCall), pendingAction=\(pendingAction != nil)")
+        AgoraLogger.info("dismissIncomingCallUI: isShowingIncomingCall=\(isShowingIncomingCall), pendingAction=\(pendingAction != nil)", module: "LiveCommunicationKit")
         
         // 标记为不再显示
         isShowingIncomingCall = false
@@ -266,11 +266,11 @@ public class LiveCommunicationKitManager: NSObject {
         if let action = pendingAction {
             if action is JoinConversationAction {
                 // 用户点击了接听，标记为接受并关闭 Live Activity
-                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击接听，关闭 Live Activity")
+                AgoraLogger.info("dismissIncomingCallUI: 用户已点击接听，关闭 Live Activity", module: "LiveCommunicationKit")
                 action.fulfill()
             } else if action is EndConversationAction {
                 // 用户点击了拒绝，标记为拒绝并关闭 Live Activity
-                print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户已点击拒绝，关闭 Live Activity")
+                AgoraLogger.info("dismissIncomingCallUI: 用户已点击拒绝，关闭 Live Activity", module: "LiveCommunicationKit")
                 action.fail()
             }
             pendingAction = nil
@@ -279,15 +279,15 @@ public class LiveCommunicationKitManager: NSObject {
         
         // 没有待处理的 action，说明用户还没操作
         // 尝试强制关闭 Live Activity
-        print("[LiveCommunicationKitManager] dismissIncomingCallUI: 用户还未操作，尝试强制关闭")
+        AgoraLogger.info("dismissIncomingCallUI: 用户还未操作，尝试强制关闭", module: "LiveCommunicationKit")
         
         if let conversation = currentConversation {
-            print("[LiveCommunicationKitManager] 使用 currentConversation 结束")
+            AgoraLogger.info("使用 currentConversation 结束", module: "LiveCommunicationKit")
             let event = Conversation.Event.conversationEnded(Date(), .unanswered)
             conversationManager?.reportConversationEvent(event, for: conversation)
             currentConversation = nil
         } else {
-            print("[LiveCommunicationKitManager] currentConversation 为 nil，尝试结束所有活动通话")
+            AgoraLogger.info("currentConversation 为 nil，尝试结束所有活动通话", module: "LiveCommunicationKit")
             // 最后手段：结束所有 active conversations
         }
     }
@@ -300,17 +300,17 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
     
     /// Conversation 开始
     public func conversationManagerDidBegin(_ manager: ConversationManager) {
-        print("[LiveCommunicationKitManager] ConversationManager 开始")
+        AgoraLogger.info("ConversationManager 开始", module: "LiveCommunicationKit")
     }
     
     /// ConversationManager 重置
     public func conversationManagerDidReset(_ manager: ConversationManager) {
-        print("[LiveCommunicationKitManager] ConversationManager 重置, isReportingIncomingCall=\(isReportingIncomingCall), isShowingIncomingCall=\(isShowingIncomingCall)")
+        AgoraLogger.info("ConversationManager 重置, isReportingIncomingCall=\(isReportingIncomingCall), isShowingIncomingCall=\(isShowingIncomingCall)", module: "LiveCommunicationKit")
         
         // 场景1：正在 reportIncomingCall 过程中被重置 → 说明 Live Activity 展现失败
         // 仅通知 completion(false)，让 CallManager 回退到 in-app UI，不结束通话
         if isReportingIncomingCall {
-            print("[LiveCommunicationKitManager] 重置发生在报告来电过程中，通知 CallManager 降级到 in-app UI")
+            AgoraLogger.info("重置发生在报告来电过程中，通知 CallManager 降级到 in-app UI", module: "LiveCommunicationKit")
             isReportingIncomingCall = false
             currentConversation = nil
             isShowingIncomingCall = false
@@ -330,13 +330,13 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
     
     /// Conversation 变化
     public func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation) {
-        print("[LiveCommunicationKitManager] Conversation 变化: \(conversation.state)")
+        AgoraLogger.info("Conversation 变化: \(conversation.state)", module: "LiveCommunicationKit")
         currentConversation = conversation
     }
     
     /// 需要执行 Action
     public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
-        print("[LiveCommunicationKitManager] 执行 Action: \(type(of: action)), uuid=\(action.uuid)")
+        AgoraLogger.info("执行 Action: \(type(of: action)), uuid=\(action.uuid)", module: "LiveCommunicationKit")
         
         // 根据 Action 类型处理
         if action is JoinConversationAction {
@@ -360,7 +360,7 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
             
             // 检查当前 Conversation 状态
             if let conversation = currentConversation {
-                print("[LiveCommunicationKitManager] EndConversationAction: conversation.state=\(conversation.state)")
+                AgoraLogger.info("EndConversationAction: conversation.state=\(conversation.state)", module: "LiveCommunicationKit")
                 
                 // 根据 Conversation 状态决定操作
                 // .idle/.joining: 通话尚未接通，用户拒绝来电
@@ -380,7 +380,7 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
                 }
             } else {
                 // 没有 Conversation 记录，仍然通知 delegate
-                print("[LiveCommunicationKitManager] EndConversationAction: currentConversation 为空")
+                AgoraLogger.info("EndConversationAction: currentConversation 为空", module: "LiveCommunicationKit")
                 delegate?.liveCommunicationKitDidRejectCall(uuid: action.uuid)
                 action.fail()
             }
@@ -393,7 +393,7 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
     
     /// Action 超时
     public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
-        print("[LiveCommunicationKitManager] Action 超时: \(type(of: action))")
+        AgoraLogger.info("Action 超时: \(type(of: action))", module: "LiveCommunicationKit")
         delegate?.liveCommunicationKitDidTimeout(uuid: action.uuid)
         action.fail()
         pendingAction = nil
@@ -401,11 +401,11 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
     
     /// 音频会话激活
     public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
-        print("[LiveCommunicationKitManager] 音频会话激活")
+        AgoraLogger.info("音频会话激活", module: "LiveCommunicationKit")
     }
     
     /// 音频会话停用
     public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
-        print("[LiveCommunicationKitManager] 音频会话停用")
+        AgoraLogger.info("音频会话停用", module: "LiveCommunicationKit")
     }
 }
