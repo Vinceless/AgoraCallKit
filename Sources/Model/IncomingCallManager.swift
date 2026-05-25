@@ -14,6 +14,7 @@ public class IncomingCallManager {
     
     private var currentView: BaseIncomingCallView?
     private weak var presentingView: UIView?
+    private let lock = NSLock()
     
     private init() {}
     
@@ -22,11 +23,25 @@ public class IncomingCallManager {
     ///   - view: 弹窗视图（可自定义子类）
     ///   - parentView: 父视图（默认 keyWindow）
     public func show(_ view: BaseIncomingCallView, in parentView: UIView? = nil) {
+        // 确保在主线程执行
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.show(view, in: parentView)
+            }
+            return
+        }
+        
+        lock.lock()
         hide()
         currentView = view
         let targetView = parentView ?? firstWindow
-        guard let targetView = targetView else { return }
+        guard let targetView = targetView else {
+            lock.unlock()
+            return
+        }
         presentingView = targetView
+        lock.unlock()
+        
         view.show(in: targetView)
     }
     
@@ -40,12 +55,16 @@ public class IncomingCallManager {
     
     /// 隐藏当前弹窗
     public func hide() {
+        lock.lock()
+        defer { lock.unlock() }
         currentView?.hide()
         currentView = nil
     }
     
     /// 是否正在显示弹窗
     public var isShowing: Bool {
+        lock.lock()
+        defer { lock.unlock() }
         return currentView != nil
     }
 }

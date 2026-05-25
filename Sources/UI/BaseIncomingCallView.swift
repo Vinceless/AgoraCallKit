@@ -154,11 +154,17 @@ open class BaseIncomingCallView: UIView {
     }
     
     @objc open func acceptTapped() {
+        guard acceptButton.isEnabled else { return }
+        acceptButton.isEnabled = false
+        rejectButton.isEnabled = false
         CallSoundService.shared.playButtonClickSound()
         delegate?.incomingCallViewDidAccept(self)
     }
     
     @objc open func rejectTapped() {
+        guard rejectButton.isEnabled else { return }
+        acceptButton.isEnabled = false
+        rejectButton.isEnabled = false
         CallSoundService.shared.playButtonClickSound()
         delegate?.incomingCallViewDidReject(self)
     }
