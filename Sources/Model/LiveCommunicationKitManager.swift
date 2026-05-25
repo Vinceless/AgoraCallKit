@@ -218,21 +218,28 @@ public class LiveCommunicationKitManager: NSObject {
         reportCallEnded(reason: "userEnded")
     }
     
-    /// 标记为已接听
+    /// 标记为已接听（作为非 delegate 路径的后备方法）
+    /// 例如用户在应用进入前台后在应用内接听电话时调用
     public func markCallAccepted() {
         isShowingIncomingCall = false
-        if let action = pendingAction {
-            action.fulfill()
-            pendingAction = nil
+        guard let action = pendingAction else {
+            // 已经通过 completion 完成，或者已超时 — 安全忽略
+            print("[LiveCommunicationKitManager] markCallAccepted: pendingAction 已为 nil，跳过")
+            return
         }
+        action.fulfill()
+        pendingAction = nil
     }
     
-    /// 标记为已拒绝
+    /// 标记为已拒绝（作为非 delegate 路径的后备方法）
+    /// 例如用户在应用进入前台后在应用内拒绝电话时调用
     public func markCallRejected() {
         isShowingIncomingCall = false
         if let action = pendingAction {
             action.fail()
             pendingAction = nil
+        } else {
+            print("[LiveCommunicationKitManager] markCallRejected: pendingAction 已为 nil，跳过")
         }
         currentConversation = nil
         currentCallUUID = nil
@@ -307,11 +314,17 @@ extension LiveCommunicationKitManager: ConversationManagerDelegate {
         // 根据 Action 类型处理
         if action is JoinConversationAction {
             pendingAction = action
-            delegate?.liveCommunicationKitDidAcceptCall(uuid: action.uuid) { success in
+            delegate?.liveCommunicationKitDidAcceptCall(uuid: action.uuid) { [weak self] success in
+                guard let self = self else { return }
                 if success {
-                    self.markCallAccepted()
+                    // 直接在闭包中捕获并 fulfill action，不依赖 pendingAction 属性
+                    // 这样可以避免异步间隙期间 pendingAction 被清除导致 action 无法完成
+                    action.fulfill()
+                    self.pendingAction = nil
+                    self.isShowingIncomingCall = false
                 } else {
-                    self.markCallRejected()
+                    action.fail()
+                    self.pendingAction = nil
                 }
             }
         } else if action is EndConversationAction {
