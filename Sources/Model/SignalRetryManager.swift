@@ -97,7 +97,9 @@ private final class RetryableOperation: Operation {
         semaphore.wait()
 
         guard let result = sendResult else {
-            handleRetryOrFail(with: NSError(domain: "SignalRetryManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "信令发送无响应"]))
+            let error = NSError(domain: "SignalRetryManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "信令发送无响应"])
+            print("[SignalRetryManager] 信令发送无响应")
+            completion(.failure(error))
             return
         }
 

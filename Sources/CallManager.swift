@@ -343,7 +343,7 @@ public class CallManager {
     
     // MARK: - 声音/震动处理
     
-    private let soundService = CallSoundService.shared
+//    private var soundService = CallSoundService.shared
     
     /// 根据通话状态变化触发对应的声音和震动
     private func handleSoundForStateChange(from oldState: CallState, to newState: CallState) {
@@ -562,8 +562,6 @@ public class CallManager {
 #if !CHINA_APP_STORE
                 if self.useSystemCallUI {
                     CallKitManager.shared.markCallAccepted()
-                }
-                #endif
                 }
                 #endif
                 // ========== 通知 App 层 present 通话控制器（除非已跳过） ==========
@@ -980,7 +978,7 @@ public class CallManager {
             }
         }
 #if !CHINA_APP_STORE
-        else if useSystemCallUI {
+        if useSystemCallUI {
             CallKitManager.shared.reportCallEnded(reason: endedReason)
         }
 #endif
@@ -1152,7 +1150,7 @@ extension CallManager: AgoraEngineDelegate {
                     } 
                 }
 #if !CHINA_APP_STORE
-                else if useSystemCallUI {
+                if useSystemCallUI {
                     CallKitManager.shared.reportCallConnected()
                 }
 #endif
@@ -1311,7 +1309,7 @@ extension CallManager: AgoraEngineDelegate {
                     }
                 }
 #if !CHINA_APP_STORE
-                else if useSystemCallUI {
+                if useSystemCallUI {
                     CallKitManager.shared.reportCallConnected()
                 }
 #endif
