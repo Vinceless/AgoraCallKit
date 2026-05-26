@@ -34,16 +34,12 @@ public final class SignalRetryManager {
     /// 默认策略
     public static let shared = SignalRetryManager()
 
-    private let operationQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 1
-        queue.qualityOfService = .utility
-        return queue
-    }()
+    /// 串行队列，保证多个重试操作不交错执行
+    private let serialQueue = DispatchQueue(label: "com.agora.signalretry.serial", qos: .utility)
 
     private init() {}
 
-    /// 带指数退避重试的信令发送
+    /// 带指数退避重试的信令发送（纯异步，不阻塞线程）
     /// - Parameters:
     ///   - policy: 重试策略
     ///   - operation: 信令发送闭包（每次调用应执行实际发送逻辑）
@@ -53,70 +49,41 @@ public final class SignalRetryManager {
         operation: @escaping (@escaping (Result<Void, Error>) -> Void) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        let operationBlock = RetryableOperation(policy: policy, action: operation, completion: completion)
-        operationQueue.addOperation(operationBlock)
-    }
-}
-
-// MARK: - 内部实现
-
-private final class RetryableOperation: Operation {
-
-    private let policy: SignalRetryManager.RetryPolicy
-    private let action: (@escaping (Result<Void, Error>) -> Void) -> Void
-    private let completion: (Result<Void, Error>) -> Void
-    private var remainingRetries: Int
-    private var currentDelay: TimeInterval
-
-    init(policy: SignalRetryManager.RetryPolicy,
-         action: @escaping (@escaping (Result<Void, Error>) -> Void) -> Void,
-         completion: @escaping (Result<Void, Error>) -> Void) {
-        self.policy = policy
-        self.action = action
-        self.completion = completion
-        self.remainingRetries = policy.maxRetries
-        self.currentDelay = policy.initialDelay
-        super.init()
+        serialQueue.async {
+            self.attemptSend(policy: policy, remainingRetries: policy.maxRetries,
+                             currentDelay: policy.initialDelay,
+                             action: operation, completion: completion)
+        }
     }
 
-    override func main() {
-        attemptSend()
-    }
-
-    private func attemptSend() {
-        guard !isCancelled else { return }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var sendResult: Result<Void, Error>?
-
+    private func attemptSend(
+        policy: RetryPolicy,
+        remainingRetries: Int,
+        currentDelay: TimeInterval,
+        action: @escaping (@escaping (Result<Void, Error>) -> Void) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         action { result in
-            sendResult = result
-            semaphore.signal()
-        }
-
-        semaphore.wait()
-
-        guard let result = sendResult else {
-            let error = NSError(domain: "SignalRetryManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "信令发送无响应"])
-            AgoraLogger.info("信令发送无响应", module: "SignalRetryManager")
-            completion(.failure(error))
-            return
-        }
-
-        switch result {
-        case .success:
-            completion(.success(()))
-        case .failure(let error):
-            if remainingRetries > 0 && !isCancelled {
-                remainingRetries -= 1
-                let delay = currentDelay
-                currentDelay = min(currentDelay * policy.multiplier, policy.maxDelay)
-                AgoraLogger.info("信令发送失败，\(delay)s 后重试（剩余 \(remainingRetries) 次）: \(error.localizedDescription)", module: "SignalRetryManager")
-                Thread.sleep(forTimeInterval: delay)
-                attemptSend()
-            } else {
-                AgoraLogger.info("信令发送失败，重试次数已用完: \(error.localizedDescription)", module: "SignalRetryManager")
-                completion(.failure(error))
+            switch result {
+            case .success:
+                completion(.success(()))
+            case .failure(let error):
+                if remainingRetries > 0 {
+                    let nextRetries = remainingRetries - 1
+                    let delay = currentDelay
+                    let nextDelay = min(currentDelay * policy.multiplier, policy.maxDelay)
+                    AgoraLogger.info("信令发送失败，\(String(format: "%.1f", delay))s 后重试（剩余 \(nextRetries) 次）: \(error.localizedDescription)", module: "SignalRetryManager")
+                    DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                        self.serialQueue.async {
+                            self.attemptSend(policy: policy, remainingRetries: nextRetries,
+                                             currentDelay: nextDelay,
+                                             action: action, completion: completion)
+                        }
+                    }
+                } else {
+                    AgoraLogger.info("信令发送失败，重试次数已用完: \(error.localizedDescription)", module: "SignalRetryManager")
+                    completion(.failure(error))
+                }
             }
         }
     }

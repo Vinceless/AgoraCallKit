@@ -69,6 +69,10 @@ public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
         config.appId = appId
         config.areaCode = .global
         engine = AgoraRtcEngineKit.sharedEngine(with: config, delegate: self)
+        guard engine != nil else {
+            AgoraLogger.error("sharedEngine 返回 nil，请检查 App ID 是否正确", module: "AgoraEngineManager")
+            return
+        }
         engine?.setChannelProfile(.communication)
         engine?.enableAudio()
         engine?.enableVideo()

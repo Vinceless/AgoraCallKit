@@ -525,10 +525,14 @@ public class CallManager {
             switch result {
             case .success:
                 // 原子切换状态：防止异步间隙中远端已取消导致状态不一致
-                guard self.transitionState(from: .incoming, to: .connecting) else {
-                    self.log("接听: 状态已变化（异步间隙中远端取消等），放弃切换", level: .warning)
-                    completion?(false)
-                    return
+                if !self.transitionState(from: .incoming, to: .connecting) {
+                    // 引擎回调（didJoinChannel / connectionStateChanged）可能已抢先
+                    // 将状态改为 .connecting，这是正常的，继续执行接听流程
+                    guard self.currentState == .connecting else {
+                        self.log("接听: 状态异常 (\(self.currentState))，放弃", level: .warning)
+                        completion?(false)
+                        return
+                    }
                 }
                 let effectiveCallID = self.currentCallID ?? ""
                 // 使用指数退避重试机制发送接听信令
@@ -860,6 +864,11 @@ public class CallManager {
     ///   - reason: 拒绝原因
     public func onCallRejected(callID: String, fromUserId: String, reason: String?) {
         log("对方拒绝: callID=\(callID), fromUserId=\(fromUserId), reason=\(reason ?? "nil")")
+        // 校验 callID：防止上一通通话的过期拒绝信令导致当前通话被错误终止
+        if let currentID = currentCallID, !currentID.isEmpty, currentID != callID {
+            log("callID 不匹配 (\(currentID) vs \(callID))，忽略此拒绝", level: .warning)
+            return
+        }
         // 允许从 calling/connecting/connected 状态拒绝（对方可能先加入频道再拒绝）
         guard currentState == .calling || currentState == .connecting || currentState == .connected else {
             log("拒绝忽略: 当前状态=\(currentState)", level: .warning)
@@ -1110,9 +1119,8 @@ extension CallManager: AgoraEngineDelegate {
         // 计时在远端用户加入时开始
         // 被叫加入频道后从 .incoming 变为 .connecting（停止来电铃声）
         // 主叫加入频道后仍保持 .calling（继续播放呼叫等待音，直到对方接听）
-        if currentState == .incoming {
-            currentState = .connecting
-        }
+        // 使用原子切换避免与 acceptCall() 的 transitionState 产生竞态
+        _ = transitionState(from: .incoming, to: .connecting)
     }
     
     public func engine(_ engine: AgoraEngineManager, didLeaveChannel channel: String) {
@@ -1132,9 +1140,8 @@ extension CallManager: AgoraEngineDelegate {
                 startDurationTimer()
             }
             
-            // 防止多个远端用户加入时重复上报（群聊场景）
-            if !hasReportedConnected {
-                hasReportedConnected = true
+            // 防止多个远端用户加入/音频首帧解码时重复上报（群聊场景）
+            if activeSession?.markReportedConnected() == true {
                 if useLiveCommunicationKit {
                     if #available(iOS 17.4, *) {
                         LiveCommunicationKitManager.shared.reportCallConnected()
@@ -1292,8 +1299,7 @@ extension CallManager: AgoraEngineDelegate {
     
     public func engine(_ engine: AgoraEngineManager, firstRemoteAudioFrameDecodedOfUid uid: UInt, elapsed: Int) {
             guard currentState == .connected else { return }
-            if !hasReportedConnected {
-                hasReportedConnected = true
+            if activeSession?.markReportedConnected() == true {
                 if useLiveCommunicationKit {
                     if #available(iOS 17.4, *) {
                         LiveCommunicationKitManager.shared.reportCallConnected()

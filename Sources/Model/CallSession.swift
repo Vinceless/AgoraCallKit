@@ -92,6 +92,16 @@ public final class CallSession: @unchecked Sendable {
         set { lock.lock(); _hasReportedConnected = newValue; lock.unlock() }
     }
 
+    /// 原子地标记已上报 connected，返回 true 表示首次标记成功（调用方负责上报）
+    /// 防止 didJoinedOfUid 和 firstRemoteAudioFrameDecodedOfUid 并发的重复上报
+    public func markReportedConnected() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !_hasReportedConnected else { return false }
+        _hasReportedConnected = true
+        return true
+    }
+
     // MARK: - 初始化
 
     public init(callID: String = "", channelName: String, token: String? = nil, callType: CallType, isCaller: Bool) {
@@ -104,8 +114,12 @@ public final class CallSession: @unchecked Sendable {
 
     /// 更新 callID（信令应答时可能回填）
     public func updateCallID(_ newCallID: String) {
-        guard callID.isEmpty else { return }
+        guard callID.isEmpty else {
+            AgoraLogger.warning("callID 已存在 (\(callID))，忽略更新为 \(newCallID)", module: "CallSession")
+            return
+        }
         callID = newCallID
+        AgoraLogger.debug("callID 更新为 \(newCallID)", module: "CallSession")
     }
 
     /// 更新 token
