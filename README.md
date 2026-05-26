@@ -8,46 +8,57 @@
 - **群聊通话**：多人群组音频/视频通话
 - **来电管理**：来电弹窗、接听/拒接
 - **悬浮窗**：通话中最小化为悬浮窗，支持拖拽和恢复全屏
-- **画中画（PiP）**：视频通话退后台自动启用画中画
+- **画中画（PiP）**：视频通话退后台自动启用画中画，返回前台自动恢复
 - **呼叫超时**：可配置超时时间，超时自动挂断
 - **通话计时**：实时显示通话时长
-- **音视频控制**：麦克风、摄像头、扬声器、前后镜头切换
+- **音视频控制**：麦克风、摄像头、扬声器（自动初始化/清理）、前后镜头切换
 - **远端状态同步**：远端用户静音/关闭摄像头状态实时更新
 - **状态机管理**：完整的通话生命周期状态管理
 - **系统来电界面**：支持 CallKit（iOS 10+）和 LiveCommunicationKit（iOS 17.4+）
 - **VoIP 推送**：支持 VoIP 推送触发的来电显示
+- **信令重试**：指数退避重试发送失败的信令，保障信令可靠性
+- **统一日志**：内置模块化日志系统，支持级别过滤、自定义输出目标
 
 ## 项目结构
 
 ```
 Sources/
-├── AgoraEngineManager.swift        # 声网引擎封装
-├── CallManager.swift               # 通话核心管理器
+├── AgoraEngineManager.swift           # 声网引擎封装
+├── CallManager.swift                  # 通话核心管理器
 ├── Model/
-│   ├── CallState.swift             # 通话状态枚举
-│   ├── CallType.swift              # 通话类型/模式枚举
-│   ├── CallUser.swift              # 用户信息模型
-│   ├── CallConfiguration.swift     # 通话配置项
-│   ├── CallKitManager.swift        # CallKit 管理器
+│   ├── AgoraLogger.swift              # 统一日志管理器
+│   ├── CallConfiguration.swift        # 通话配置项
+│   ├── CallError.swift                # 错误类型定义
+│   ├── CallSession.swift              # 通话会话模型
+│   ├── CallSoundService.swift         # 通话音效服务
+│   ├── CallState.swift                # 通话状态枚举
+│   ├── CallType.swift                 # 通话类型/模式枚举
+│   ├── CallUser.swift                 # 用户信息模型
+│   ├── CallKitManager.swift           # CallKit 管理器
+│   ├── IncomingCallManager.swift      # 来电弹窗管理器
 │   ├── LiveCommunicationKitManager.swift  # LiveCommunicationKit 管理器
-│   ├── IncomingCallManager.swift   # 来电弹窗管理器
-│   ├── CallSoundService.swift      # 通话音效服务
-│   ├── VoIPPushManager.swift       # VoIP 推送管理器
-│   └── PictureInPictureManager.swift # 画中画管理器
+│   ├── PictureInPictureManager.swift  # 画中画管理器
+│   ├── SignalRetryManager.swift       # 信令重试管理器
+│   ├── UIWindowScene+KeyWindow.swift  # KeyWindow 工具扩展
+│   ├── VideoRendererBinder.swift      # 视频渲染绑定器
+│   └── VoIPPushManager.swift          # VoIP 推送管理器
 ├── Protocols/
-│   ├── CallSignalDelegate.swift    # 信令收发协议
-│   ├── CallUIDelegate.swift        # UI 回调协议
-│   ├── CurrentUserProvider.swift   # 当前用户信息协议
-│   ├── TokenProvider.swift         # Token 获取协议
-│   └── PIPVideoFrameDelegate.swift # PiP 视频帧代理
+│   ├── AgoraEngineProtocol.swift          # 引擎抽象协议
+│   ├── CallSignalDelegate.swift           # 信令收发协议
+│   ├── CallSoundServiceProtocol.swift     # 音效服务协议
+│   ├── CallUIDelegate.swift               # UI 回调协议
+│   ├── CallUIDelegateMulticast.swift      # UI 多播代理
+│   ├── CurrentUserProvider.swift          # 当前用户信息协议
+│   ├── PIPVideoFrameDelegate.swift        # PiP 视频帧代理
+│   └── TokenProvider.swift                # Token 获取协议
 └── UI/
-    ├── BaseCallViewController.swift      # 通话界面基类
-    ├── BaseIncomingCallView.swift        # 来电弹窗基类
-    ├── SingleAudioCallViewController.swift  # 单聊音频界面
-    ├── SingleVideoCallViewController.swift  # 单聊视频界面
-    ├── GroupAudioCallViewController.swift   # 群聊音频界面
-    ├── GroupVideoCallViewController.swift   # 群聊视频界面
-    └── FloatingWindow.swift               # 悬浮窗组件
+    ├── BaseCallViewController.swift            # 通话界面基类
+    ├── BaseIncomingCallView.swift              # 来电弹窗基类
+    ├── FloatingWindow.swift                    # 悬浮窗组件
+    ├── SingleAudioCallViewController.swift     # 单聊音频界面
+    ├── SingleVideoCallViewController.swift     # 单聊视频界面
+    ├── GroupAudioCallViewController.swift      # 群聊音频界面
+    └── GroupVideoCallViewController.swift      # 群聊视频界面
 ```
 
 ## 快速开始
@@ -210,6 +221,92 @@ class YourUserService: CurrentUserProvider {
 }
 ```
 
+## 日志系统（AgoraLogger）
+
+框架内置统一日志管理器，所有模块日志集中输出，支持级别过滤和自定义输出。
+
+### 日志级别
+
+| 级别 | 枚举值 | 说明 |
+|------|--------|------|
+| `debug` | `AgoraLogLevel.debug` | 调试信息，DEVELOP 环境默认输出 |
+| `info` | `AgoraLogLevel.info` | 一般信息 |
+| `warning` | `AgoraLogLevel.warning` | 警告信息 |
+| `error` | `AgoraLogLevel.error` | 错误信息 |
+| `none` | `AgoraLogLevel.none` | 关闭所有日志 |
+
+### 日志配置
+
+```swift
+// 设置最低日志级别（低于此级别不输出）
+// DEBUG 模式默认 .debug，RELEASE 模式默认 .warning
+AgoraLogger.shared.minimumLevel = .warning  // 仅输出警告和错误
+
+// 完全关闭日志
+AgoraLogger.shared.minimumLevel = .none
+
+// 自定义输出目标（如写入文件、上传到服务端）
+AgoraLogger.shared.output = { formattedLog in
+    // 将日志写入文件
+    yourFileLogger.append(formattedLog)
+}
+```
+
+### 在自定义代码中使用
+
+```swift
+// 推荐方式：直接使用静态方法
+AgoraLogger.debug("调试信息", module: "MyModule")
+AgoraLogger.info("用户 \(userId) 发起通话", module: "MyModule")
+AgoraLogger.warning("Token 即将过期", module: "MyModule")
+AgoraLogger.error("加入频道失败: \(error)", module: "MyModule")
+```
+
+### 内置模块标识
+
+框架内部使用以下模块标识，便于按模块过滤日志：
+
+| 模块标识 | 对应文件 |
+|----------|----------|
+| `CallManager` | CallManager.swift |
+| `AgoraEngineManager` | AgoraEngineManager.swift |
+| `LiveCommunicationKit` | LiveCommunicationKitManager.swift |
+| `CallKitManager` | CallKitManager.swift |
+| `PiP` | PictureInPictureManager.swift |
+| `CallSoundService` | CallSoundService.swift |
+| `VoIPPushManager` | VoIPPushManager.swift |
+| `SignalRetryManager` | SignalRetryManager.swift |
+| `SingleVideo` | SingleVideoCallViewController.swift |
+
+## 信令重试（SignalRetryManager）
+
+对于网络波动导致的信令（挂断/接听/拒绝/取消）发送失败，框架内置指数退避重试机制。
+
+### 重试策略
+
+```swift
+let policy = SignalRetryManager.RetryPolicy(
+    maxRetries: 3,          // 最大重试 3 次
+    initialDelay: 1.0,      // 初始延迟 1 秒
+    multiplier: 2.0,        // 每次延迟翻倍（1s → 2s → 4s）
+    maxDelay: 10.0          // 最大延迟 10 秒
+)
+```
+
+### 使用方式
+
+```swift
+// 重试管理器已集成在 CallManager 内部，无需单独调用
+
+// 如果需要自定义重试策略：
+SignalRetryManager.shared.defaultPolicy = SignalRetryManager.RetryPolicy(
+    maxRetries: 5,
+    initialDelay: 0.5,
+    multiplier: 1.5,
+    maxDelay: 5.0
+)
+```
+
 ## 系统来电界面配置
 
 ### CallKit 和 LiveCommunicationKit 概述
@@ -228,6 +325,8 @@ class YourUserService: CurrentUserProvider {
 | `true` | `false` | < 17.4 | 不使用系统来电界面 |
 | `false` | `true` | 任意 | CallKit |
 | `false` | `false` | 任意 | 不使用系统来电界面 |
+
+> **中国区注意**: 定义了 `CHINA_APP_STORE` 编译标记后，`isCallKitEnabled` 始终为 `false`，此时应使用 `.liveCommunicationKitOnly` 或 `.voipPushOnly` 模式。详见下方 [中国区 App Store 适配](#中国区-app-store-适配china_app_store) 章节。
 
 ### 基础配置示例
 
@@ -407,6 +506,104 @@ class AppCallUIDelegate: NSObject, CallUIDelegate {
         }
     }
 }
+```
+
+## 中国区 App Store 适配（CHINA_APP_STORE）
+
+由于 CallKit 在中国大陆地区受到限制，框架通过 `CHINA_APP_STORE` 编译标记来区分中国区和全球区版本。**全球区版本默认包含 CallKit 支持，中国区版本编译时排除所有 CallKit 相关代码。**
+
+### 行为差异
+
+| 编译标记 | CallKit | LiveCommunicationKit | 推荐 mode |
+|----------|---------|---------------------|------------|
+| **未定义**（全球区） | ✅ 可用 | ✅ 可用（iOS 17.4+） | `.auto`（默认） |
+| **定义了 CHINA_APP_STORE**（中国区） | ❌ 不可用 | ✅ 可用（iOS 17.4+） | `.liveCommunicationKitOnly` |
+
+> **注意**: LiveCommunicationKit 是目前 iOS 17.4+ 在中国区可用的系统来电框架，可用于替代 CallKit 实现锁屏/后台接听能力。
+
+### 集成方式一：Xcode 工程设置
+
+在 Xcode 中为 **中国区 Target** 添加编译标记：
+
+1. 选中项目 → 选择中国区 Target → **Build Settings**
+2. 搜索 **Swift Compiler - Custom Flags**
+3. 在 **Active Compilation Conditions** 中添加：
+
+```
+CHINA_APP_STORE
+```
+
+4. 确保该标记**仅**在中国区 Target 中设置，**全球区 Target 不添加**
+
+### 集成方式二：CocoaPods（podspec）
+
+通过 `pod_target_xcconfig` 按 Target 注入编译标记：
+
+```ruby
+# 方式 A：在工程 Podfile 中按 Target 设置
+target 'YourApp_China' do
+  pod 'AgoraCallKit'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    if target.name == 'AgoraCallKit'
+      # 仅为中国区 Target 添加编译标记
+      target.build_configurations.each do |config|
+        config.build_settings['OTHER_SWIFT_FLAGS'] ||= ['$(inherited)']
+        config.build_settings['OTHER_SWIFT_FLAGS'] << '-D CHINA_APP_STORE'
+      end
+    end
+  end
+end
+```
+
+```ruby
+# 方式 B：直接修改 podspec（不推荐，影响所有集成方）
+spec.pod_target_xcconfig = {
+  'OTHER_SWIFT_FLAGS' => '-D CHINA_APP_STORE'
+}
+```
+
+### 集成方式三：Swift Package Manager (SPM)
+
+在 `Package.swift` 中通过 Target 的 `swiftSettings` 添加：
+
+```swift
+.target(
+    name: "AgoraCallKit",
+    dependencies: [...],
+    path: "Sources",
+    swiftSettings: [
+        // 中国区版本取消注释下面这行
+        // .define("CHINA_APP_STORE"),
+    ]
+)
+```
+
+> SPM 方式下，建议维护两个分支或通过 CI 切换标记。
+
+### 中国区推荐配置
+
+当定义了 `CHINA_APP_STORE` 后，CallKit 代码在编译时即被排除，CallConfiguration 中应使用 **LiveCommunicationKit** 作为系统来电界面：
+
+```swift
+// 中国区 App Store 版本
+CallConfiguration.shared.configure(mode: .liveCommunicationKitOnly)
+// 或：仅在 VoIP 推送时显示系统来电界面
+CallConfiguration.shared.configure(mode: .voipPushOnly)
+```
+
+### 全球区推荐配置
+
+全球区版本不定义 `CHINA_APP_STORE`，CallKit 和 LiveCommunicationKit 均可使用：
+
+```swift
+// 全球 App Store 版本
+CallConfiguration.shared.configure(mode: .auto)
+// .auto 模式会自动选择：
+//   iOS 17.4+ → LiveCommunicationKit
+//   iOS < 17.4 → CallKit
 ```
 
 ## 铃声配置
