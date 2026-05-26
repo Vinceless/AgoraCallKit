@@ -79,67 +79,22 @@ public class CallManager {
     /// 当前通话状态的锁保护 backing store
     private var _currentState: CallState = .idle
     
-    /// 当前通话状态（线程安全）
+    /// 当前通话状态（线程安全，只读）
     public var currentState: CallState {
         get {
             stateLock.lock()
             defer { stateLock.unlock() }
             return _currentState
         }
-        set {
-            stateLock.lock()
-            let oldValue = _currentState
-            _currentState = newValue
-            stateLock.unlock()
-            guard oldValue != newValue else { return }
-            // didSet 逻辑：锁外执行，避免死锁
-            log("状态变化: \(oldValue) → \(newValue)", level: .debug)
-            handleSoundForStateChange(from: oldValue, to: newValue)
-            if Thread.isMainThread {
-                uiDelegate.callStateDidChange(newValue)
-            } else {
-                DispatchQueue.main.async { [weak self] in
-                    self?.uiDelegate.callStateDidChange(newValue)
-                }
-            }
-        }
     }
-    
-    /// 原子地执行状态转换：仅当当前状态等于 expected 时才切换到 newState。
-    /// - Returns: true 表示转换成功，false 表示当前状态不匹配 expected
-    private func transitionState(from expected: CallState, to newState: CallState) -> Bool {
-        stateLock.lock()
-        let oldValue = _currentState
-        guard oldValue == expected else {
-            stateLock.unlock()
-            return false
-        }
-        _currentState = newState
-        stateLock.unlock()
-        // didSet 逻辑在锁外执行
-        if oldValue != newState {
-            log("状态变化: \(oldValue) → \(newState)", level: .debug)
-            handleSoundForStateChange(from: oldValue, to: newState)
-            if Thread.isMainThread {
-                uiDelegate.callStateDidChange(newState)
-            } else {
-                DispatchQueue.main.async { [weak self] in
-                    self?.uiDelegate.callStateDidChange(newState)
-                }
-            }
-        }
-        return true
-    }
-    
-    /// 锁保护地设置状态（无前置条件检查），返回旧值
-    private func setStateUnconditionally(_ newState: CallState) -> CallState {
-        stateLock.lock()
-        let oldValue = _currentState
-        _currentState = newState
-        stateLock.unlock()
-        guard oldValue != newState else { return oldValue }
-        log("状态变化: \(oldValue) → \(newState)", level: .debug)
-        handleSoundForStateChange(from: oldValue, to: newState)
+
+    // MARK: - 状态引擎（所有状态修改统一走以下三个入口）
+
+    /// 状态变更副作用的唯一出口：日志 → 声音 → UI通知（锁外调用）
+    private func triggerStateSideEffects(from oldState: CallState, to newState: CallState) {
+        guard oldState != newState else { return }
+        log("状态变化: \(oldState) → \(newState)", level: .debug)
+        handleSoundForStateChange(from: oldState, to: newState)
         if Thread.isMainThread {
             uiDelegate.callStateDidChange(newState)
         } else {
@@ -147,7 +102,45 @@ public class CallManager {
                 self?.uiDelegate.callStateDidChange(newState)
             }
         }
-        return oldValue
+    }
+    
+    /// 原子 CAS 转换：仅当当前状态 == expected 时切换（绝大多数场景）
+    /// - Returns: true 表示转换成功
+    private func transitionState(from expected: CallState, to newState: CallState) -> Bool {
+        stateLock.lock()
+        guard _currentState == expected else {
+            stateLock.unlock()
+            return false
+        }
+        let oldState = _currentState
+        _currentState = newState
+        stateLock.unlock()
+        triggerStateSideEffects(from: oldState, to: newState)
+        return true
+    }
+    
+    /// 多源原子转换：源状态在 allowed 中任意一个即可（群聊/引擎回调汇聚场景）
+    /// - Returns: true 表示转换成功
+    private func transitionState(from allowed: [CallState], to newState: CallState) -> Bool {
+        stateLock.lock()
+        let oldState = _currentState
+        guard allowed.contains(oldState) else {
+            stateLock.unlock()
+            return false
+        }
+        _currentState = newState
+        stateLock.unlock()
+        triggerStateSideEffects(from: oldState, to: newState)
+        return true
+    }
+    
+    /// 强制写入终态，不做 CAS 检查（仅限 disconnectCall / resetCall）
+    private func forceSetState(_ newState: CallState) {
+        stateLock.lock()
+        let oldState = _currentState
+        _currentState = newState
+        stateLock.unlock()
+        triggerStateSideEffects(from: oldState, to: newState)
     }
     
     /// 当前活跃通话会话（封装通话上下文），nil 表示无活跃通话
@@ -170,7 +163,20 @@ public class CallManager {
         set { activeSession?.callUUID = newValue }
     }
     
-    public var localUser: CallUser?
+    /// 本地用户信息（线程安全，引擎后台回调和主线程操作均需读写）
+    private var _localUser: CallUser?
+    public var localUser: CallUser? {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return _localUser
+        }
+        set {
+            stateLock.lock()
+            _localUser = newValue
+            stateLock.unlock()
+        }
+    }
     public var currentRemoteUser: CallUser? {
         get { activeSession?.remoteUser }
         set { activeSession?.remoteUser = newValue }
@@ -781,7 +787,7 @@ public class CallManager {
         ensureSystemUIConfigured()
         
         isCaller = false
-        currentState = .incoming
+        forceSetState(.incoming)
         startCallingTimeout()
         
         let callUUID = UUID()
@@ -854,7 +860,7 @@ public class CallManager {
             activeSession?.updateCallID(callID)
         }
         stopCallingTimeout()
-        currentState = .connecting
+        _ = transitionState(from: [.calling, .connecting], to: .connecting)
     }
     
     /// 对方拒绝通话
@@ -956,18 +962,8 @@ public class CallManager {
         _currentState = targetState
         stateLock.unlock()
         
-        // 状态变更的 didSet 逻辑（锁外执行）
-        if oldState != targetState {
-            log("状态变化: \(oldState) → \(targetState)", level: .debug)
-            handleSoundForStateChange(from: oldState, to: targetState)
-            if Thread.isMainThread {
-                uiDelegate.callStateDidChange(targetState)
-            } else {
-                DispatchQueue.main.async { [weak self] in
-                    self?.uiDelegate.callStateDidChange(targetState)
-                }
-            }
-        }
+        // 统一副作用触发（锁外执行）
+        triggerStateSideEffects(from: oldState, to: targetState)
         
         // 通知系统通话结束（锁外执行，避免与系统框架回调产生死锁）
         if useLiveCommunicationKit {
@@ -1019,7 +1015,7 @@ public class CallManager {
         // 统一清理：离开频道、悬浮窗、画中画（必须在重置会话之前）
         cleanupAllResources()
         isCaller = false
-        currentState = .idle
+        forceSetState(.idle)
         localUser = nil
         callStartTime = nil
         // 清除整个会话
@@ -1073,10 +1069,12 @@ public class CallManager {
         callingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: callingTimeoutInterval, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             if self.isInCallSetup {
-                self.log("呼叫超时! 通知 App 端处理", level: .warning)
+                self.log("呼叫超时! 自动挂断并通知 App", level: .warning)
                 self.stopCallingTimeout()
+                // 先通知 App 端（允许展示超时 UI），再自动挂断
                 DispatchQueue.main.async {
                     self.uiDelegate.didCallTimeout()
+                    self.hangUp()
                 }
             }
         }
@@ -1132,9 +1130,8 @@ extension CallManager: AgoraEngineDelegate {
         // 远端用户加入
         stopCallingTimeout()
         
-        // 如果还没有进入 connected 状态，推进状态
-        if isInCallSetup {
-            currentState = .connected
+        // 从任何「建立中」状态推进到 connected（单聊/群聊统一入口）
+        if transitionState(from: [.calling, .connecting, .incoming], to: .connected) {
             if callStartTime == nil {
                 callStartTime = Date()
                 startDurationTimer()
@@ -1270,23 +1267,14 @@ extension CallManager: AgoraEngineDelegate {
     public func engine(_ engine: AgoraEngineManager, connectionStateChanged state: AgoraConnectionState) {
         log("引擎回调: 连接状态变化 state=\(state.rawValue)")
         switch state {
-        case .connecting:
-            // 被叫：加入频道后从 .incoming → .connecting（停止来电铃声）
-            // 主叫：保持 .calling 状态（继续播放呼叫等待音，直到对方接听）
-            if currentState == .incoming {
-                currentState = .connecting
-            }
-        case .connected:
-            // 引擎连接成功
-            // 被叫：.incoming → .connecting
-            // 主叫：保持 .calling，等待对方接听信令
-            if currentState == .incoming {
-                currentState = .connecting
-            }
+        case .connecting, .connected:
+            // 引擎连接成功：被叫从 incoming → connecting（停止来电铃声）
+            // 主叫保持 .calling，等待对方接听信令
+            _ = transitionState(from: .incoming, to: .connecting)
+            // 网络恢复：从 reconnecting → connected
+            _ = transitionState(from: .reconnecting, to: .connected)
         case .reconnecting:
-            if currentState == .connected {
-                currentState = .reconnecting
-            }
+            _ = transitionState(from: .connected, to: .reconnecting)
         case .disconnected:
             if currentState == .connected || currentState == .reconnecting || currentState == .connecting {
                 log("引擎连接断开，触发 disconnectCall")

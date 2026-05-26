@@ -164,8 +164,8 @@ public class LiveCommunicationKitManager: NSObject {
                 await MainActor.run {
                     self.isShowingIncomingCall = true
                     self.isReportingIncomingCall = false
-                    self.reportCompletion?(true)
-                    self.reportCompletion = nil
+                    completion(true)
+//                    self.reportCompletion = nil
                 }
             } catch {
                 AgoraLogger.error("❌ 报告来电失败: \(error.localizedDescription)", module: "LiveCommunicationKit")
@@ -174,11 +174,12 @@ public class LiveCommunicationKitManager: NSObject {
                     self.isReportingIncomingCall = false
                     self.currentCallUUID = nil
                     self.currentConversation = nil
-                    self.reportCompletion?(false)
-                    self.reportCompletion = nil
+                    completion(false)
+//                    self.reportCompletion = nil
                 }
             }
         }
+        
     }
     
     // MARK: - 通话状态报告

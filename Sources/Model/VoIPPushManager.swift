@@ -126,12 +126,11 @@ extension VoIPPushManager: PKPushRegistryDelegate {
             return
         }
         
-        // 解析 payload
+        // 解析 payload → 异步处理来电（不再阻塞 PushKit 回调）
         payloadDelegate.voipPushManager(didReceivePayload: payload.dictionaryPayload) { [weak self] info in
-            guard let self = self else { completion(); return }
+            guard let self = self else { return }
             
             if let info = info {
-                // 解析成功，交给 CallManager 处理来电
                 self.handleIncomingCall(info: info) { success in
                     if !success {
                         AgoraLogger.warning("系统来电界面显示失败", module: "VoIPPushManager")
@@ -143,6 +142,7 @@ extension VoIPPushManager: PKPushRegistryDelegate {
                 completion()
             }
         }
+        Thread.sleep(forTimeInterval: 0.05)
     }
     
     /// VoIP 推送处理失败
