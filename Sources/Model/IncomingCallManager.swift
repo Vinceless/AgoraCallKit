@@ -14,7 +14,7 @@ public class IncomingCallManager {
     
     private var currentView: BaseIncomingCallView?
     private weak var presentingView: UIView?
-    private let lock = NSLock()
+//    private let lock = NSLock()
     
     private init() {}
     
@@ -31,16 +31,13 @@ public class IncomingCallManager {
             return
         }
         
-        lock.lock()
         hide()
         currentView = view
         let targetView = parentView ?? firstWindow
         guard let targetView = targetView else {
-            lock.unlock()
             return
         }
         presentingView = targetView
-        lock.unlock()
         
         view.show(in: targetView)
     }
@@ -55,16 +52,12 @@ public class IncomingCallManager {
     
     /// 隐藏当前弹窗
     public func hide() {
-        lock.lock()
-        defer { lock.unlock() }
         currentView?.hide()
         currentView = nil
     }
     
     /// 是否正在显示弹窗
     public var isShowing: Bool {
-        lock.lock()
-        defer { lock.unlock() }
         return currentView != nil
     }
 }
