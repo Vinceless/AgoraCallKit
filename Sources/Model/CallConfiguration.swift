@@ -99,6 +99,16 @@ public class CallConfiguration {
     
     // MARK: - 来电展示类型
     
+    /// CallKit 是否在目标市场可用的编译时检查
+    /// - 中国区 App Store 不允许使用 CallKit，因此 CHINA_APP_STORE 下始终返回 false
+    private var callKitAvailable: Bool {
+#if CHINA_APP_STORE
+        return false
+#else
+        return true
+#endif
+    }
+    
     /// 根据来电类型和当前 SystemCallUI 配置，返回系统来电界面展示类型
     /// - Parameter type: 来电类型（.voIPPush 或 .normal）
     /// - Returns: 系统来电界面展示类型（LiveCommunicationKit、CallKit 或 none）
@@ -110,7 +120,7 @@ public class CallConfiguration {
             case .none, .voipPushOnly:
                 return .none
             case .callKitOnly:
-                return .callKit
+                return callKitAvailable ? .callKit : .none
             case .liveCommunicationKitOnly:
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
@@ -120,7 +130,7 @@ public class CallConfiguration {
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
                 }
-                return .callKit
+                return callKitAvailable ? .callKit : .none
             }
             
         case .voIPPush:
@@ -129,7 +139,7 @@ public class CallConfiguration {
             case .none:
                 return .none
             case .callKitOnly:
-                return .callKit
+                return callKitAvailable ? .callKit : .none
             case .liveCommunicationKitOnly:
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
@@ -139,7 +149,7 @@ public class CallConfiguration {
                 if #available(iOS 17.4, *) {
                     return .liveCommunicationKit
                 }
-                return .callKit
+                return callKitAvailable ? .callKit : .none
             }
         }
     }
@@ -164,6 +174,7 @@ public class CallConfiguration {
     /// - true: 收到来电时显示系统来电 UI，支持锁屏/后台接听
     /// - false: 不使用任何系统来电界面，来电仅通过 App 内 uiDelegate 处理
     public var isCallKitEnabled: Bool {
+        guard callKitAvailable else { return false }
         switch systemCallUI {
         case .none, .liveCommunicationKitOnly:
             return false

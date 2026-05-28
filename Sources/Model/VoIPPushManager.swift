@@ -79,7 +79,22 @@ public class VoIPPushManager: NSObject {
     // MARK: - 初始化
     
     /// 注册 PushKit VoIP 推送（App 启动时调用）
+    ///
+    /// **重要**：中国区 App Store（CHINA_APP_STORE）iOS < 17.4 不支持 VoIP Push。
+    /// - iOS 要求 VoIP Push 必须配合 CallKit 上报来电，否则系统会 SIGABRT 杀死 App。
+    /// - 但中国区 App Store 不允许使用 CallKit（审核拒审）。
+    /// - iOS 17.4+ 可使用 LiveCommunicationKit 替代，VoIP Push 在 17.4+ 可用。
+    /// - **iOS < 17.4 + CHINA_APP_STORE**：不注册 VoIP Push，App 层应使用普通 APNs 推送。
     public func registerForVoIPPush() {
+#if CHINA_APP_STORE
+        if #available(iOS 17.4, *) {
+            // iOS 17.4+ 有 LiveCommunicationKit 替代，VoIP Push 可用
+        } else {
+            // iOS < 17.4 无法使用 CallKit（中国区审核限制），放弃 VoIP Push 注册
+            AgoraLogger.warning("CHINA_APP_STORE + iOS < 17.4: VoIP Push 不可用（需要 CallKit 但中国区不允许）。请使用普通 APNs 推送代替。", module: "VoIPPushManager")
+            return
+        }
+#endif
         // 使用私有队列初始化 PKPushRegistry，避免与主线程冲突
 //        let queue = DispatchQueue(label: "com.agoracallkit.voippush", qos: .userInteractive)
 //        let registry = PKPushRegistry(queue: queue)
