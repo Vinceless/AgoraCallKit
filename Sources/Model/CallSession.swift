@@ -14,6 +14,8 @@ public final class CallSession: @unchecked Sendable {
     private let lock = NSLock()
 
     // MARK: - 基础信息
+    /// 通话代际标识（递增计数器），用于过滤残留的旧通话引擎回调
+    public let callGeneration: UInt64
     /// 通话唯一标识符（服务端返回）
     public private(set) var callID: String
     /// 频道名
@@ -104,7 +106,8 @@ public final class CallSession: @unchecked Sendable {
 
     // MARK: - 初始化
 
-    public init(callID: String = "", channelName: String, token: String? = nil, callType: CallType, isCaller: Bool) {
+    public init(callID: String = "", channelName: String, token: String? = nil, callType: CallType, isCaller: Bool, callGeneration: UInt64 = 0) {
+        self.callGeneration = callGeneration
         self.callID = callID
         self.channelName = channelName
         self.token = token

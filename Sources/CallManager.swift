@@ -76,6 +76,28 @@ public class CallManager {
     /// 是否主叫方。仅从主线程写入，不需要锁保护
     public private(set) var isCaller: Bool = false
     
+    /// 通话代际计数器：每次发起/接收新通话时递增，用于过滤残留的旧通话引擎回调
+    /// stateLock 保护，确保与 state 切换原子一致
+    private var _currentGeneration: UInt64 = 0
+    
+    /// 当前活跃通话的代际（线程安全，只读快捷访问）
+    private var currentGeneration: UInt64 {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _currentGeneration
+    }
+    
+    /// 递增代际计数器并返回新值（必须在 stateLock 内调用）
+    private func advanceGeneration() -> UInt64 {
+        _currentGeneration += 1
+        return _currentGeneration
+    }
+    
+    /// 检查引擎回调是否属于当前活跃通话（stateLock 内调用）
+    private func isCurrentGeneration(_ gen: UInt64) -> Bool {
+        return gen == _currentGeneration && _currentGeneration > 0
+    }
+    
     /// 当前通话状态的锁保护 backing store
     private var _currentState: CallState = .idle
     
@@ -393,6 +415,13 @@ public class CallManager {
             return
         }
         
+        // 如果上次通话刚结束（终态），先清理资源再发起新通话
+        let currentStateSnapshot = currentState
+        if currentStateSnapshot == .disconnected || currentStateSnapshot == .failed {
+            log("当前处于终态(\(currentStateSnapshot))，强制 resetCall 后发起新通话")
+            resetCall()
+        }
+        
         // 原子地检查 idle 并切换到 calling，防止竞态
         guard transitionState(from: .idle, to: .calling) else {
             log("发起失败: 当前状态不是 idle", level: .warning)
@@ -400,8 +429,11 @@ public class CallManager {
             return
         }
         
+        // 递增通话代际（锁内操作），用于过滤残留的旧通话引擎回调
+        let generation = advanceGeneration()
+        
         // 创建会话并确保系统 UI 已配置（懒加载）
-        activeSession = CallSession(callID: callID ?? "", channelName: channelName, token: token, callType: callType, isCaller: true)
+        activeSession = CallSession(callID: callID ?? "", channelName: channelName, token: token, callType: callType, isCaller: true, callGeneration: generation)
         activeSession?.remoteUser = user
         ensureSystemUIConfigured()
         
@@ -456,6 +488,13 @@ public class CallManager {
             return
         }
         
+        // 如果上次通话刚结束（终态），先清理资源再发起新通话
+        let currentStateSnapshot = currentState
+        if currentStateSnapshot == .disconnected || currentStateSnapshot == .failed {
+            log("当前处于终态(\(currentStateSnapshot))，强制 resetCall 后发起新群聊")
+            resetCall()
+        }
+        
         // 原子地检查 idle 并切换到 calling
         guard transitionState(from: .idle, to: .calling) else {
             log("发起失败: 当前状态不是 idle", level: .warning)
@@ -463,8 +502,11 @@ public class CallManager {
             return
         }
         
+        // 递增通话代际（锁内操作），用于过滤残留的旧通话引擎回调
+        let generation = advanceGeneration()
+        
         // 创建会话并确保系统 UI 已配置（懒加载）
-        activeSession = CallSession(callID: "", channelName: channelName, token: token, callType: callType, isCaller: true)
+        activeSession = CallSession(callID: "", channelName: channelName, token: token, callType: callType, isCaller: true, callGeneration: generation)
         ensureSystemUIConfigured()
         
         isCaller = true
@@ -781,7 +823,9 @@ public class CallManager {
         }
         
         // 创建通话会话并确保系统 UI 已配置（懒加载）
-        let session = CallSession(callID: callID ?? "", channelName: channelName, token: token, callType: callType, isCaller: false)
+        // 递增通话代际（锁内操作），用于过滤残留的旧通话引擎回调
+        let generation = advanceGeneration()
+        let session = CallSession(callID: callID ?? "", channelName: channelName, token: token, callType: callType, isCaller: false, callGeneration: generation)
         session.remoteUser = user
         activeSession = session
         ensureSystemUIConfigured()
@@ -980,11 +1024,8 @@ public class CallManager {
         let notify = {
             self.log("通知 uiDelegate.didDisconnect")
             self.uiDelegate.didDisconnect(error: error)
-            // 延迟 resetCall，让 UI 有时间展示 disconnected/failed 状态
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.log("延迟 resetCall")
-                self?.resetCall()
-            }
+            // 立即重置状态，不再延迟。UI 的断开动画由 ViewController 自行管理
+            self.resetCall()
         }
         if Thread.isMainThread {
             notify()
@@ -1104,7 +1145,20 @@ private class CallManagerSignalListener: CallSignalListener {
 // MARK: - AgoraEngineDelegate
 extension CallManager: AgoraEngineDelegate {
     
+    /// 检查引擎回调是否属于当前活跃通话，过滤残留的旧通话异步回调
+    /// - 当旧通话的 leaveChannel() 异步回调在新通话启动后才到达时，此检查会将其丢弃
+    /// - Returns: true 表示回调属于当前活跃通话，应继续处理
+    private func isValidEngineCallback() -> Bool {
+        guard let sessionGen = activeSession?.callGeneration, sessionGen > 0 else { return false }
+        let currentGen = currentGeneration
+        return sessionGen == currentGen
+    }
+    
     public func engine(_ engine: AgoraEngineManager, didJoinChannel channel: String, uid: UInt) {
+        guard isValidEngineCallback() else {
+            log("忽略残留 didJoinChannel（代际不匹配）", level: .debug)
+            return
+        }
         log("引擎回调: 本地加入频道 channel=\(channel), uid=\(uid)")
         let localName = userProvider?.currentUserName ?? userProvider?.currentUserId ?? "\(uid)"
         let localUserId = userProvider?.currentUserId ?? "\(uid)"
@@ -1126,6 +1180,10 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, didJoinedOfUid uid: UInt) {
+        guard isValidEngineCallback() else {
+            log("忽略残留 didJoinedOfUid uid=\(uid)（代际不匹配）", level: .debug)
+            return
+        }
         log("引擎回调: 远端用户加入 uid=\(uid)")
         // 远端用户加入
         stopCallingTimeout()
@@ -1174,6 +1232,10 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, didOfflineOfUid uid: UInt) {
+        guard isValidEngineCallback() else {
+            log("忽略残留 didOfflineOfUid uid=\(uid)（代际不匹配）", level: .debug)
+            return
+        }
         log("引擎回调: 远端用户离开 uid=\(uid)")
         // 使用会话的线程安全 remoteUsers 管理
         let user = activeSession?.removeRemoteUser(forUid: uid)
@@ -1195,6 +1257,10 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, didOccurError error: Error) {
+        guard isValidEngineCallback() else {
+            log("忽略残留引擎错误（代际不匹配）: \(error.localizedDescription)", level: .debug)
+            return
+        }
         log("引擎回调: 发生错误: \(error.localizedDescription)", level: .error)
         DispatchQueue.main.async { [weak self] in
             self?.uiDelegate.didOccurError(error)
@@ -1265,6 +1331,10 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, connectionStateChanged state: AgoraConnectionState) {
+        guard isValidEngineCallback() else {
+            log("忽略残留连接状态变化（代际不匹配） state=\(state.rawValue)", level: .debug)
+            return
+        }
         log("引擎回调: 连接状态变化 state=\(state.rawValue)")
         switch state {
         case .connecting, .connected:
@@ -1286,6 +1356,7 @@ extension CallManager: AgoraEngineDelegate {
     }
     
     public func engine(_ engine: AgoraEngineManager, firstRemoteAudioFrameDecodedOfUid uid: UInt, elapsed: Int) {
+            guard isValidEngineCallback() else { return }
             guard currentState == .connected else { return }
             if activeSession?.markReportedConnected() == true {
                 if useLiveCommunicationKit {
