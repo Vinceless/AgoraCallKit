@@ -152,8 +152,8 @@ open class BaseCallViewController: UIViewController, CallUIDelegate, FloatingWin
             bgColor.setFill()
             context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
             
-            // 画居中图标
-            let icon = UIImage(systemName: iconName)!
+            // 画居中图标（SF Symbol 不存在时安全跳过，避免 SIGABRT）
+            guard let icon = UIImage(systemName: iconName) else { return }
             let height = iconSize * icon.size.height/icon.size.width
             let iconRect = CGRect(
                 x: (size - iconSize) / 2,

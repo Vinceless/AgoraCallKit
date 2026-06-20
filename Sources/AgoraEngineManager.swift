@@ -56,8 +56,27 @@ public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
     // PiP 视频帧代理
     private var pipVideoFrameDelegate: PIPVideoFrameDelegate?
     
+    private var hasRegisteredTerminationObserver = false
+
     private override init() {
         super.init()
+    }
+    
+    /// 注册 App 终止通知，确保退出前销毁 Agora 引擎释放资源
+    private func registerTerminationObserver() {
+        guard !hasRegisteredTerminationObserver else { return }
+        hasRegisteredTerminationObserver = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillTerminate),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func handleAppWillTerminate() {
+        AgoraLogger.info("App 即将终止，销毁 Agora 引擎", module: "AgoraEngineManager")
+        destroy()
     }
     
     // MARK: - 配置
@@ -94,6 +113,9 @@ public class AgoraEngineManager: NSObject, AgoraEngineProtocol {
             mirrorMode: .auto
         )
         engine?.setVideoEncoderConfiguration(videoConfig)
+        
+        // 注册 App 终止通知，确保退出前销毁引擎
+        registerTerminationObserver()
     }
     
     /// 销毁引擎，释放资源

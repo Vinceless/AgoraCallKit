@@ -116,7 +116,14 @@ public class CallManager {
     private func triggerStateSideEffects(from oldState: CallState, to newState: CallState) {
         guard oldState != newState else { return }
         log("状态变化: \(oldState) → \(newState)", level: .debug)
-        handleSoundForStateChange(from: oldState, to: newState)
+        // 音效操作涉及 AVAudioSession/AVAudioPlayer，必须在主线程执行
+        if Thread.isMainThread {
+            handleSoundForStateChange(from: oldState, to: newState)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.handleSoundForStateChange(from: oldState, to: newState)
+            }
+        }
         if Thread.isMainThread {
             uiDelegate.callStateDidChange(newState)
         } else {
@@ -937,9 +944,9 @@ public class CallManager {
     ///   - callID: 服务端返回的通话标识符
     ///   - fromUserId: 挂断方用户ID
     public func onCallHangup(callID: String, fromUserId: String) {
-        log("对方挨断: callID=\(callID), fromUserId=\(fromUserId)")
+        log("对方挂断: callID=\(callID), fromUserId=\(fromUserId)")
         guard isInActiveCall else {
-            log("挨断忽略: 当前状态=\(currentState)", level: .warning)
+            log("挂断忽略: 当前状态=\(currentState)", level: .warning)
             return
         }
         // 单聊场景：只要不是自己发的就处理
